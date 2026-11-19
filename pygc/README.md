@@ -128,6 +128,8 @@ gc pr update PR_ID ready
 gc pr update PR_ID compare=another-branch base=main
 gc pr update PR_ID close draft  # independent states can be combined
 gc pr update PR_ID reopen       # preserves draft state
+gc pr show PR_ID         # JSON: pull_request and comments
+gc pr show PR_ID --text  # plain text with an indented reply tree
 gc pr comments PR_ID
 gc pr comments --help  # also shown when called without a PR ID
 gc comment PR_ID "Another comment"
@@ -142,6 +144,14 @@ gc comment delete PR_ID:COMMENT_ID
 The `comment` group provides `add`, `update`, and `delete`; `gc comment PR_ID TEXT`
 is shorthand for `gc comment add PR_ID TEXT`. Use explicit `add` if a target ID
 is one of those action words. `gc comment --help` lists the actions.
+
+`gc pr show PR_ID` returns `{"pull_request": {...}, "comments": [...]}` with
+all PR fields and complete comment records. `--text` displays PR details and an
+ASCII comment tree: the first reply ID determines the parent; multi-target
+comments list all targets explicitly. Comments without reply IDs are roots,
+with `main` first. Siblings are ordered by ID. `--repo-dir` works in both modes.
+The synchronous `show_pull_request(id, directory=".")` library API returns
+`Result[PullRequestDetails]`, reading PR metadata and comments from one snapshot.
 
 Commands emit JSON records (lists for `list` and `comments`), preserving multiline
 text. List filters combine with AND: `open`, `mine`, `author=NAME_OR_EMAIL`,

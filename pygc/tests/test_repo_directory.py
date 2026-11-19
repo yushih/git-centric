@@ -44,6 +44,10 @@ def test_all_repo_commands_use_override(pair, monkeypatch) -> None:
 
     item = invoke(["pr", "new", "main", "main", "Selected PR"])
     assert invoke(["pr", "list"])[0]["id"] == item["id"]
+    assert invoke(["pr", "show", item["id"]])["pull_request"]["id"] == item["id"]
+    shown = runner.invoke(app, ["pr", "show", item["id"], "--text", "--repo-dir", str(selected)])
+    assert shown.exit_code == 0 and f"PR {item['id']}" in shown.stdout
+    assert shown.stderr.count("Warning:") == 1
     assert invoke(["pr", "update", item["id"], "title=Changed"])["title"] == "Changed"
     comment = invoke(["comment", item["id"], "Body"])
     target = item["id"] + ":" + comment["id"]
@@ -144,6 +148,7 @@ def test_non_repo_commands_and_help(pair, monkeypatch) -> None:
         ["pr", "list"],
         ["pr", "update"],
         ["pr", "comments"],
+        ["pr", "show"],
         ["comment"],
         ["comment", "update"],
         ["comment", "delete"],

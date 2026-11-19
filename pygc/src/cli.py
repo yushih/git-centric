@@ -149,6 +149,68 @@ def pr_list(
     _output(library.list_pull_requests(filters or (), directory=_directory(repo_dir)))
 
 
+def _pr_text(details: library.PullRequestDetails) -> str:
+    """Render a validated conversation without recursion or Markdown styling."""
+    pr = details.pull_request
+    lines = [
+        f"PR {pr.id}",
+        f"Title: {pr.title}",
+        f"Compare: {pr.compare}",
+        f"Base: {pr.base}",
+        f"Author: {pr.author}",
+        f"Created: {pr.created_at}",
+        f"Draft: {str(pr.draft).lower()}  Closed: {str(pr.closed).lower()}  "
+        f"Merged: {str(pr.merged).lower()}",
+        "",
+        "Comments:",
+    ]
+    children: dict[str | None, list[library.Comment]] = {}
+    for comment in details.comments:
+        parent = comment.replies_to[0] if comment.replies_to else None
+        children.setdefault(parent, []).append(comment)
+    # Explicit stack avoids Python's recursion limit for long conversations.
+    stack = [
+        (c, "", i == len(children.get(None, [])) - 1)
+        for i, c in reversed(list(enumerate(children.get(None, []))))
+    ]
+    while stack:
+        comment, prefix, last = stack.pop()
+        label = f"[{comment.id}]"
+        if len(comment.replies_to) > 1:
+            label += (
+                f" (replies to: {', '.join(comment.replies_to)}; "
+                f"tree parent: {comment.replies_to[0]})"
+            )
+        lines.append(prefix + ("`-- " if last else "|-- ") + label)
+        continuation = prefix + ("    " if last else "|   ")
+        # split rather than splitlines retains blank/trailing lines in the body.
+        lines.extend(continuation + line for line in comment.text.split("\n"))
+        replies = children.get(comment.id, [])
+        stack.extend(
+            (c, continuation, i == len(replies) - 1) for i, c in reversed(list(enumerate(replies)))
+        )
+    return "\n".join(lines)
+
+
+@pr_app.command("show", no_args_is_help=True)
+def pr_show(
+    identifier: Annotated[str, typer.Argument(metavar="PR_ID", help="Pull request ID to show.")],
+    text: Annotated[
+        bool, typer.Option("--text", help="Show plain text with a comment tree.")
+    ] = False,
+    repo_dir: RepoDir = None,
+) -> None:
+    """Show a pull request and all comments as JSON; --text displays a reply tree.
+
+    Multiple reply targets use the first as tree parent and list all targets.
+    """
+    result = library.show_pull_request(identifier, directory=_directory(repo_dir))
+    if text and isinstance(result, library.Success):
+        typer.echo(_pr_text(result.value))
+    else:
+        _output(result)
+
+
 @pr_app.command("update")
 def pr_update(
     identifier: str, updates: Annotated[list[str], typer.Argument()], repo_dir: RepoDir = None

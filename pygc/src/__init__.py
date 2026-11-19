@@ -12,11 +12,13 @@ from .library import (
 from .library.pull_requests import (
     Comment,
     PullRequest,
+    PullRequestDetails,
     add_comment,
     create_pull_request,
     delete_comment,
     list_comments,
     list_pull_requests,
+    show_pull_request,
     update_comment,
     update_pull_request,
 )
@@ -24,6 +26,8 @@ from .library.pull_requests import (
 __all__ = [
     "Comment",
     "PullRequest",
+    "PullRequestDetails",
+    "show_pull_request",
     "add_comment",
     "create_pull_request",
     "delete_comment",

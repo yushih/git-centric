@@ -100,3 +100,6 @@ Nested command routing and backward-compatible append shorthand follow the
 [comment subcommands change](../changes/2026-11-19-comment-subcommands.md).
 
 All writers follow the [descriptive commit message contract](../changes/2026-11-19-descriptive-commit-messages.md).
+
+PR-008: `gc pr show PR_ID [--text]` displays the full PR and conversation, per
+[SHOW-001–004](../changes/2026-11-19-pr-show.md). JSON is the default.

@@ -53,6 +53,12 @@ class Comment:
     replies_to: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class PullRequestDetails:
+    pull_request: PullRequest
+    comments: tuple[Comment, ...]
+
+
 class _Problem(Exception):
     def __init__(self, reason: FailureReason, detail: str):
         self.reason = reason
@@ -432,6 +438,37 @@ def _comments(store: _Store, name: str) -> list[Comment]:
 def list_comments(identifier: str, directory: str | Path = ".") -> Result[list[Comment]]:
     """Read exact comment contents and reply IDs."""
     return _run(directory, lambda store: _comments(store, store.get(identifier)[0]))
+
+
+def show_pull_request(identifier: str, directory: str | Path = ".") -> Result[PullRequestDetails]:
+    """Read a complete conversation from a single captured metadata commit."""
+
+    def show(store: _Store) -> PullRequestDetails:
+        name, pr = store.get(identifier)
+        comments = _comments(store, name)
+        # A first-parent cycle cannot be rendered as a tree. Validate iteratively
+        # in linear time, including disconnected cycles and self references.
+        parents = {c.id: c.replies_to[0] if c.replies_to else None for c in comments}
+        complete: set[str] = set()
+        for comment in comments:
+            path: set[str] = set()
+            current: str | None = comment.id
+            while current is not None and current not in complete:
+                if current in path:
+                    _reject(FailureReason.INVALID_METADATA, "Cycle in comment reply tree")
+                path.add(current)
+                current = parents[current]
+            complete.update(path)
+        author, created_at = _origins(store)[identifier]
+        pr = replace(
+            pr,
+            author=author,
+            created_at=created_at,
+            merged=_merged(store.repo, pr, _branches(store.repo)),
+        )
+        return PullRequestDetails(pr, tuple(comments))
+
+    return _run(directory, show)
 
 
 async def add_comment(target: str, text: str, directory: str | Path = ".") -> Result[Comment]:

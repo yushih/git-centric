@@ -665,3 +665,129 @@ def test_descriptive_comment_commit_messages(ready: Path) -> None:
     assert git(ready, "show", "-s", "--format=%B", GC_REF) == (
         f"delete comment {comment.id} on pr {item.id}"
     )
+
+
+def test_show_pr_json_and_text_tree(ready: Path, monkeypatch) -> None:
+    # Deterministic IDs make tree placement and sibling order independently
+    # observable. A multi-target reply belongs under its first target only.
+    import json
+    from dataclasses import asdict
+
+    from pygc import show_pull_request
+
+    item = create(ready)
+    with patch.object(pr, "generate_id", side_effect=["a", "b", "c", "d"]):
+        asyncio.run(add_comment(item.id + ":main", "café\nsecond line\n", ready))
+        asyncio.run(add_comment(item.id + ":a:main", "multiple parents", ready))
+        asyncio.run(add_comment(item.id + ":main", "", ready))
+        asyncio.run(add_comment(item.id, "root comment", ready))
+    monkeypatch.chdir(ready)
+    before = git(ready, "rev-parse", GC_REF)
+    details = show_pull_request(item.id, ready).value
+    assert details.pull_request == list_pull_requests(directory=ready).value[0]
+    runner = CliRunner()
+    result = runner.invoke(app, ["pr", "show", item.id])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {
+        "pull_request": asdict(details.pull_request),
+        "comments": [
+            dict(id=c.id, text=c.text, replies_to=list(c.replies_to)) for c in details.comments
+        ],
+    }
+    result = runner.invoke(app, ["pr", "show", item.id, "--text"])
+    assert result.exit_code == 0, result.output
+    assert f"PR {item.id}" in result.stdout and f"Title: {item.title}" in result.stdout
+    assert "Compare: feature/login\nBase: main" in result.stdout
+    assert f"Author: {details.pull_request.author}" in result.stdout
+    assert f"Created: {details.pull_request.created_at}" in result.stdout
+    assert "Draft: false  Closed: false  Merged: false" in result.stdout
+    assert result.stdout.split("Comments:\n", 1)[1] == (
+        "|-- [main]\n|   initial\n|   \n|   \n"
+        "|   |-- [a]\n|   |   café\n|   |   second line\n|   |   \n"
+        "|   |   `-- [b] (replies to: a, main; tree parent: a)\n"
+        "|   |       multiple parents\n"
+        "|   `-- [c]\n|       \n`-- [d]\n    root comment\n"
+    )
+    assert git(ready, "rev-parse", GC_REF) == before
+
+
+def test_show_snapshot_and_failures(ready: Path, monkeypatch, tmp_path: Path) -> None:
+    # A concurrent append after snapshot capture cannot mix new comments into
+    # the old PR view. Missing/invalid inputs fail consistently in either mode.
+    from pygc import show_pull_request
+
+    item = create(ready)
+    original = pr._origins
+
+    def concurrent_append(store):
+        asyncio.run(add_comment(item.id, "later", ready))
+        return original(store)
+
+    with patch.object(pr, "_origins", side_effect=concurrent_append):
+        details = show_pull_request(item.id, ready).value
+    assert len(details.comments) == 1
+    assert len(show_pull_request(item.id, ready).value.comments) == 2
+    monkeypatch.chdir(ready)
+    runner = CliRunner()
+    for flags in ([], ["--text"]):
+        for target, reason in (("missing", "not_found"), ("!", "invalid_argument")):
+            result = runner.invoke(app, ["pr", "show", target, *flags])
+            assert result.exit_code == 1 and reason in result.stderr and not result.stdout
+    assert runner.invoke(app, ["pr", "show", item.id, "extra"]).exit_code == 2
+    monkeypatch.chdir(tmp_path)
+    for args, code in (([], 2), (["--help"], 0)):
+        result = runner.invoke(app, ["pr", "show", *args])
+        assert result.exit_code == code
+        for word in ("PR_ID", "JSON", "--text", "--repo-dir"):
+            assert word in result.output
+    assert show_pull_request(item.id, tmp_path).reason == FailureReason.NOT_A_REPOSITORY
+
+
+@pytest.mark.parametrize("cycle", [False, True])
+def test_show_invalid_conversation(ready: Path, monkeypatch, cycle: bool) -> None:
+    # Invalid UTF-8 and disconnected first-parent cycles fail before either
+    # renderer emits output; cycles must never hang or silently omit comments.
+    item = create(ready)
+    with pr.Repo(ready) as repository:
+        store = pr._Store(repository)
+        name, _ = store.get(item.id)
+        entries = pr._subtree(repository, store.prs, name)
+        if cycle:
+            entries["comment-a:b"] = pr._blob(repository, "a")
+            entries["comment-b:a"] = pr._blob(repository, "b")
+        else:
+            entries["comment-bad"] = (
+                "100644",
+                "blob",
+                pr._git(repository, "hash-object", "-w", "--stdin", stdin=b"\xff"),
+            )
+        store.prs[name] = pr._write_tree(repository, entries)
+        store.publish("Corrupt show fixture")
+    monkeypatch.chdir(ready)
+    for flags in ([], ["--text"]):
+        result = CliRunner().invoke(app, ["pr", "show", item.id, *flags])
+        assert result.exit_code == 1 and "invalid_metadata" in result.stderr
+        assert not result.stdout
+
+
+def test_show_deep_tree(ready: Path, monkeypatch) -> None:
+    # Construct a long valid chain in one fixture commit; neither validation
+    # nor rendering may depend on Python's recursion limit.
+    item = create(ready)
+    with pr.Repo(ready) as repository:
+        store = pr._Store(repository)
+        name, _ = store.get(item.id)
+        entries = pr._subtree(repository, store.prs, name)
+        blob = pr._blob(repository, "body")
+        parent = "main"
+        for i in range(1050):
+            identifier = f"reply-{i:04}"
+            entries[f"comment-{identifier}:{parent}"] = blob
+            parent = identifier
+        store.prs[name] = pr._write_tree(repository, entries)
+        store.publish("Deep show fixture")
+    monkeypatch.chdir(ready)
+    result = CliRunner().invoke(app, ["pr", "show", item.id, "--text"])
+    assert result.exit_code == 0, result.exception
+    assert result.stdout.count("[reply-") == 1050
+    assert "[reply-1049]" in result.stdout
