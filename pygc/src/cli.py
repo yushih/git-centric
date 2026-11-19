@@ -1,5 +1,6 @@
 """The gc command line interface."""
 
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -15,6 +16,23 @@ def help_command(ctx: typer.Context) -> None:
     """Show the top-level help message."""
     assert ctx.parent is not None
     typer.echo(ctx.parent.get_help())
+
+
+@app.command()
+def init(
+    directory: Annotated[
+        Path, typer.Argument(help="Git repository directory; defaults to the current directory.")
+    ] = Path("."),
+) -> None:
+    """Initialize Git-centric metadata in an existing Git repository."""
+    # Translate the library's result into CLI output and an exit status. The
+    # library itself remains independent of Typer and never exits the process.
+    match library.initialize_gc(directory):
+        case library.Success(commit):
+            typer.echo(f"Initialized Git-centric ({commit})")
+        case library.Failure(reason, detail):
+            typer.echo(f"{reason.value}: {detail}", err=True)
+            raise typer.Exit(code=1)
 
 
 @app.command()

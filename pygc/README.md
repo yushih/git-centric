@@ -1,8 +1,8 @@
 # pygc
 
 Python skeleton for Git-centric: a reusable library, a `gc` CLI, and a React SPA
-calling the same library over JSON-RPC 2.0 through FastAPI. The example operation
-is `greet`; Git repository operations are intentionally left for future implementation.
+calling the greeting example over JSON-RPC 2.0 through FastAPI. GitPython-backed
+repository initialization is available as a Python API and through `gc init`.
 
 ## Requirements and setup
 
@@ -50,6 +50,60 @@ root page shows setup instructions; the API still works.
 
 ## Library and RPC
 
+### Initialize a repository
+
+Install/update dependencies with `uv sync` before using the new GitPython API.
+Git must be installed and author/committer identity configured as for a normal
+commit (for example, `git config user.name` and `git config user.email`).
+
+```sh
+gc init              # work on the current directory
+gc init /path/to/repo # work on an existing repository
+gc help              # includes init
+gc init --help       # describes the optional directory argument
+```
+
+Use `uv run gc` if the virtual environment is not activated. Initialization
+does not create a Git repository: use `git init` first if needed. Worktree
+subdirectories, linked worktrees, and bare repositories are accepted.
+
+```python
+from pygc import Failure, Success, initialize_gc, is_gc_initialized
+
+match is_gc_initialized():  # optionally pass a path
+    case Success(False):
+        match initialize_gc():
+            case Success(commit_oid):
+                print("Created orphan commit", commit_oid)
+            case Failure(reason, detail):
+                print(reason.value, detail)
+    case Success(True):
+        print("Already initialized")
+    case Failure(reason, detail):
+        print(reason.value, detail)
+```
+
+Both functions return the algebraic type `Result[T] = Success[T] | Failure`;
+operational exceptions become failure values. Inspect `.value` or pattern-match
+the variant; the result object itself is not a boolean. `is_gc_initialized`
+returns `Success(True)` only when the local `__git-centric__` branch has a
+root-level `__git-centric__` **directory in its committed tree**. A file or
+symlink with that name, or an uncommitted directory, does not qualify.
+
+`initialize_gc` requires `Success(False)` and rechecks that precondition. It
+creates an orphan commit containing only an empty `__git-centric__/.gitkeep`.
+GitPython invokes `hash-object`, `mktree`, `commit-tree`, and an atomic
+`update-ref` create transaction. HEAD, the index, and worktree files stay intact.
+Failed publication can leave unreachable Git objects for garbage collection.
+
+Failure reasons are `not_a_repository`, `already_initialized`, `branch_conflict`
+(the reserved branch already exists without the directory), `git_error`
+(including missing identity or a concurrent ref creation), `io_error`, and
+`unexpected_error`. Existing branches are never overwritten. CLI failures print
+the reason and detail to stderr and exit with status 1.
+
+### Greeting example over RPC
+
 ```python
 from pygc import greet
 
@@ -75,6 +129,9 @@ errors; unexpected exceptions are logged and returned as generic internal errors
 ```text
 src/
   library/         Transport-independent functions (public API in __init__.py)
+    constants.py       Reserved names and Git tree modes
+    initialization.py  GitPython inspection and initialization
+    result.py          Success / Failure algebraic result types
   cli.py           Typer commands and gc web launcher
   rpc.py           Explicit method registry and protocol adapter
   web.py           FastAPI app factory and static hosting

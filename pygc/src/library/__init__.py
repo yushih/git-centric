@@ -1,7 +1,20 @@
 """Transport-independent application functions.
 
-Replace or extend this example with Git-centric operations.
+Git-centric operations return algebraic result values instead of throwing.
 """
+
+from .initialization import initialize_gc, is_gc_initialized
+from .result import Failure, FailureReason, Result, Success
+
+__all__ = [
+    "Failure",
+    "FailureReason",
+    "Result",
+    "Success",
+    "greet",
+    "initialize_gc",
+    "is_gc_initialized",
+]
 
 
 def greet(name: str = "world") -> str:
