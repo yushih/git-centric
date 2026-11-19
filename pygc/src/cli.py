@@ -89,8 +89,18 @@ def web(
     repo_dir: RepoDir = None,
 ) -> None:
     """Start the FastAPI server and serve the built React frontend."""
-    _directory(repo_dir)
-    uvicorn.run("pygc.web:create_app", factory=True, host=host, port=port, reload=reload)
+    import os
+
+    # Uvicorn reload workers inherit the selected absolute directory.
+    previous = os.environ.get("PYGC_WEB_REPO")
+    os.environ["PYGC_WEB_REPO"] = str(_directory(repo_dir).resolve())
+    try:
+        uvicorn.run("pygc.web:create_app", factory=True, host=host, port=port, reload=reload)
+    finally:
+        if previous is None:
+            os.environ.pop("PYGC_WEB_REPO", None)
+        else:
+            os.environ["PYGC_WEB_REPO"] = previous
 
 
 pr_app = typer.Typer(no_args_is_help=True, help="Create, list, update and discuss pull requests.")

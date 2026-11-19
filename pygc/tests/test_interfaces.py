@@ -97,7 +97,9 @@ def test_internal_error_is_not_leaked() -> None:
     # An unexpected library exception must become a generic error without exposing exception
     # details.
     with patch.dict("pygc.rpc.METHODS", {"greet": lambda: 1 / 0}):
-        response = client.post("/api/rpc", json={"jsonrpc": "2.0", "method": "greet", "id": 1})
+        response = TestClient(create_app()).post(
+            "/api/rpc", json={"jsonrpc": "2.0", "method": "greet", "id": 1}
+        )
     assert response.json()["error"] == {"code": -32603, "message": "Internal error"}
 
 
@@ -111,3 +113,54 @@ def test_frontend_hosting(tmp_path) -> None:
     assert built.get("/").text == "<h1>SPA</h1>"
     assert built.get("/api/missing").status_code == 404
     assert built.get("/missing.js").status_code == 404
+
+
+def test_repository_context_is_scoped(tmp_path) -> None:
+    # Independent application factories bind different paths. Even in a batch,
+    # clients cannot redirect inspection to another directory.
+    from git import Repo
+
+    path = tmp_path / "one"
+    Repo.init(path, initial_branch="trunk").close()
+    first = TestClient(create_app(directory=path))
+    second = TestClient(create_app(directory=tmp_path / "missing"))
+    call = {"jsonrpc": "2.0", "method": "repo.get", "id": 1}
+    assert first.post("/api/rpc", json=call).json()["result"] == {
+        "name": "one",
+        "branch": "trunk",
+        "head": None,
+        "bare": False,
+        "initialized": False,
+        "metadata_tip": None,
+    }
+    assert (
+        second.post("/api/rpc", json=call).json()["error"]["data"]["reason"] == "not_a_repository"
+    )
+    batch = [{**call, "params": {"directory": str(path)}}]
+    assert first.post("/api/rpc", json=batch).json()[0]["error"]["code"] == -32602
+
+
+def test_reload_factory_inherits_selected_repo(tmp_path, monkeypatch) -> None:
+    # The reload subprocess constructs its app using inherited environment.
+    import os
+
+    from git import Repo
+
+    path = tmp_path / "selected"
+    Repo.init(path, bare=True).close()
+    monkeypatch.setenv("PYGC_WEB_REPO", "prior")
+    with patch("pygc.cli.uvicorn.run") as run:
+
+        def inspect_launch(*args, **kwargs):
+            assert kwargs["reload"]
+            assert os.environ["PYGC_WEB_REPO"] == str(path.resolve())
+            result = (
+                TestClient(create_app())
+                .post("/api/rpc", json={"jsonrpc": "2.0", "method": "repo.get", "id": 1})
+                .json()["result"]
+            )
+            assert result["name"] == "selected" and result["bare"]
+
+        run.side_effect = inspect_launch
+        assert runner.invoke(app, ["web", "--reload", "--repo-dir", str(path)]).exit_code == 0
+    assert os.environ["PYGC_WEB_REPO"] == "prior"

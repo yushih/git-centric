@@ -30,9 +30,12 @@ from .pull_requests import (
     update_comment,
     update_pull_request,
 )
+from .repository import RepositoryContext, get_repository
 from .result import Failure, FailureReason, Result, Success
 
 __all__ = [
+    "RepositoryContext",
+    "get_repository",
     "Issue",
     "IssueDetails",
     "create_issue",

@@ -35,8 +35,11 @@ from .library.pull_requests import (
     update_comment,
     update_pull_request,
 )
+from .library.repository import RepositoryContext, get_repository
 
 __all__ = [
+    "RepositoryContext",
+    "get_repository",
     "Issue",
     "IssueDetails",
     "create_issue",

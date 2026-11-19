@@ -1,6 +1,7 @@
 """FastAPI transport and packaged SPA hosting."""
 
 import json
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
@@ -8,11 +9,15 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from .rpc import error, handle
+from .rpc import error, handle, repository_methods
 
 
-def create_app(static_dir: Path | None = None) -> FastAPI:
+def create_app(static_dir: Path | None = None, *, directory: Path | None = None) -> FastAPI:
     app = FastAPI(title="Git-centric", version="0.1.0")
+
+    methods = repository_methods(
+        (directory or Path(os.environ.get("PYGC_WEB_REPO", "."))).resolve()
+    )
 
     @app.post("/api/rpc")
     async def rpc(request: Request) -> Response:
@@ -20,7 +25,7 @@ def create_app(static_dir: Path | None = None) -> FastAPI:
             payload = await request.json()
         except (json.JSONDecodeError, UnicodeDecodeError):
             return JSONResponse(error(-32700, "Parse error"))
-        result = await run_in_threadpool(handle, payload)
+        result = await run_in_threadpool(handle, payload, methods)
         return Response(status_code=204) if result is None else JSONResponse(result)
 
     # Keep unknown API routes from falling through to frontend files.

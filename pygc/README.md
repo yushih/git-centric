@@ -1,7 +1,7 @@
 # pygc
 
 Python skeleton for Git-centric: a reusable library, a `gc` CLI, and a React SPA
-calling the greeting example over JSON-RPC 2.0 through FastAPI. GitPython-backed
+displaying repository context over JSON-RPC 2.0 through FastAPI. GitPython-backed
 repository initialization and pull requests are available through Python and the CLI.
 
 ## Requirements and setup
@@ -357,3 +357,8 @@ Build the frontend before `uv build` to include the SPA in the wheel. Generated
 assets are ignored by Git. `package-lock.json` pins frontend dependencies. The first
 `uv sync` generates `uv.lock`; commit that file, then use `uv sync --locked` and
 `npm ci` for reproducible installs.
+
+The browser can inspect the repository selected by `gc web --repo-dir PATH`
+with the parameterless JSON-RPC method `repo.get`. It returns the repository
+name, bare flag, HEAD branch and commit, initialization status and metadata tip.
+Reload workers inherit the same selection.

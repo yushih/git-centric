@@ -235,5 +235,6 @@ gc web --reload  # reload the server during development
 
 `gc web` starts the local web server at http://127.0.0.1:8000 by default. Build
 the frontend using the [setup instructions](pygc/README.md#requirements-and-setup)
-first. The current web interface is a greeting demo; pull request, issue, and comment
-operations are available through the CLI.
+first. The Code tab shows the selected branch, latest commit, and committed files.
+Use the breadcrumbs to browse directories or History to inspect earlier revisions.
+Issues and Pull requests open read-only lists. Use the CLI for edits.

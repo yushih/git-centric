@@ -35,3 +35,12 @@ it("surfaces HTTP failures", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 503 })));
   await expect(call("greet", {})).rejects.toThrow("HTTP 503");
 });
+
+it("checks repository structure even for a correlated response", async () => {
+  // An omitted nullable field still violates the method contract.
+  vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+    const { id } = JSON.parse(init.body as string);
+    return Response.json({ jsonrpc: "2.0", id, result: { name: "repo", bare: false } });
+  });
+  await expect(call("repo.get", {})).rejects.toThrow("Invalid JSON-RPC result");
+});
