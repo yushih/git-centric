@@ -11,6 +11,12 @@ from enum import StrEnum
 class FailureReason(StrEnum):
     """Stable machine-readable failure reasons; details are for people."""
 
+    INVALID_ARGUMENT = "invalid_argument"
+    NOT_INITIALIZED = "not_initialized"
+    BRANCH_NOT_FOUND = "branch_not_found"
+    NOT_FOUND = "not_found"
+    INVALID_METADATA = "invalid_metadata"
+    ID_CONFLICT = "id_conflict"
     NOT_A_REPOSITORY = "not_a_repository"
     ALREADY_INITIALIZED = "already_initialized"
     BRANCH_CONFLICT = "branch_conflict"

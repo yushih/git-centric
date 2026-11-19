@@ -13,3 +13,12 @@ GC_INITIAL_COMMIT_MESSAGE = "Initialize Git-centric metadata"
 # These are Git tree-entry modes, not the permissions of a temporary disk file.
 GIT_REGULAR_FILE_MODE = "100644"
 GIT_DIRECTORY_MODE = "040000"
+
+PR_DIRECTORY = "pull-requests"
+PR_CLOSED = "[closed]"
+PR_DRAFT = "[draft]"
+COMMENT_PREFIX = "comment-"
+COMMENT_MAIN = "main"
+PR_COMPARE_SEPARATOR = "~>"
+PR_ID_SEPARATOR = "#"
+PR_TITLE_SEPARATOR = ":"

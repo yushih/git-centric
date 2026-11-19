@@ -2,7 +2,7 @@
 
 Python skeleton for Git-centric: a reusable library, a `gc` CLI, and a React SPA
 calling the greeting example over JSON-RPC 2.0 through FastAPI. GitPython-backed
-repository initialization is available as a Python API and through `gc init`.
+repository initialization and pull requests are available through Python and the CLI.
 
 ## Requirements and setup
 
@@ -12,7 +12,7 @@ repository initialization is available as a Python API and through `gc init`.
 Run from this directory:
 
 ```sh
-uv sync
+uv sync --locked
 cd frontend
 npm ci
 npm run build
@@ -102,6 +102,68 @@ Failure reasons are `not_a_repository`, `already_initialized`, `branch_conflict`
 `unexpected_error`. Existing branches are never overwritten. CLI failures print
 the reason and detail to stderr and exit with status 1.
 
+### Pull requests and conversations
+
+Run `gc init` first. All supplied branch names must identify existing local
+branches, including branches in filters and updates. Quote titles, comments,
+and update/filter values containing spaces. Extra positional words are errors.
+
+```sh
+gc pr new feature/login main "Add login" "Initial description"
+gc pr new feature/login main "Add login"       # optional empty main comment
+gc pr new feature/login main "Add login" @-    # read description from stdin
+gc pr list open mine 'title=login.*' base=main
+gc pr update PR_ID 'title=Revised title' draft
+gc pr update PR_ID ready
+gc pr update PR_ID compare=another-branch base=main
+gc pr update PR_ID close
+gc pr comments PR_ID
+gc comment PR_ID "Another comment"
+gc comment PR_ID:main "Reply to the description"
+gc comment PR_ID:COMMENT_ID @-
+```
+
+Commands emit JSON records (lists for `list` and `comments`), preserving multiline
+text. List filters combine with AND: `open`, `mine`, `author=NAME_OR_EMAIL`,
+`compare=BRANCH`, `base=BRANCH`, and `title=REGEX`. Full `Name <email>` identities
+also match `author=`. `mine` uses the current Git author email. Unknown or repeated
+filters/updates, invalid regexes, and conflicting status actions fail.
+`ready` removes draft status; it does not reopen a closed PR. `draft` and `close`
+replace the stored status. Open PRs whose compare tip is an ancestor of base are
+reported as merged; missing branches cannot establish merged status.
+
+```python
+from pygc import create_pull_request, list_pull_requests, add_comment
+
+# Inside an async function (or use asyncio.run from synchronous code):
+result = await create_pull_request("feature/login", "main", "Add login", "Description")
+requests = list_pull_requests(["open"], directory="/path/to/repo")
+reply = await add_comment("PR_ID:main", "Feedback", directory="/path/to/repo")
+```
+
+Public APIs return `Result[PullRequest]`, `Result[list[PullRequest]]`,
+`Result[Comment]`, or `Result[list[Comment]]`. `update_pull_request(id, updates,
+directory=".")` accepts the CLI update tokens; `list_comments(id, directory=".")`
+returns exact text and `replies_to` IDs. Creation/update results contain stored
+fields; listing additionally resolves author, creation time and merged status.
+`generate_id(kind)` in `pygc.library.ids` is async and currently generates random
+UUID strings, distinguishing `pull_request` from `comment` requests.
+
+Metadata follows `pull-requests/c~>b#id:title/comment-id[:reply-id...]` under the
+reserved directory. Components use percent escaping for separators, spaces,
+slashes and percent signs, so branch names such as `feature/login` round-trip.
+The initial comment is always `comment-main`. Multiple reply IDs are supported.
+No command edits existing comments. Git history supplies PR creator and creation
+time, tracked by stable ID through directory renames along first-parent history.
+Writes preserve the checkout and index and atomically append to metadata history;
+a concurrent update fails instead of overwriting it. Failed writes may leave
+unreachable Git objects. Retrying a failed write requires a fresh operation.
+
+Additional failure reasons are `not_initialized`, `invalid_argument`,
+`branch_not_found`, `not_found`, `invalid_metadata`, and `id_conflict`.
+Failures print reason/detail to stderr and exit 1; CLI arity errors exit 2.
+These APIs are not registered over RPC. No frontend changes are included.
+
 ### Greeting example over RPC
 
 ```python
@@ -144,8 +206,8 @@ tests/             Library, CLI, server, and protocol tests
 ```
 
 To add an operation, implement it in `src/library/`, export it in `src/__init__.py`, add
-a Typer command, register a validated callable in `rpc.METHODS`, and extend the
-TypeScript `Methods` contract, response validation, and React interface.
+a Typer command as appropriate. RPC exposure requires a separately specified wire
+contract, explicit registration in `rpc.METHODS`, and corresponding client updates.
 The setuptools build configuration maps `src/` to the installed `pygc` package, so imports
 remain `from pygc import greet`. Editable installs use the same mapping.
 

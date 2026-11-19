@@ -4,9 +4,25 @@ Git-centric operations return algebraic result values instead of throwing.
 """
 
 from .initialization import initialize_gc, is_gc_initialized
+from .pull_requests import (
+    Comment,
+    PullRequest,
+    add_comment,
+    create_pull_request,
+    list_comments,
+    list_pull_requests,
+    update_pull_request,
+)
 from .result import Failure, FailureReason, Result, Success
 
 __all__ = [
+    "Comment",
+    "PullRequest",
+    "add_comment",
+    "create_pull_request",
+    "list_comments",
+    "list_pull_requests",
+    "update_pull_request",
     "Failure",
     "FailureReason",
     "Result",
