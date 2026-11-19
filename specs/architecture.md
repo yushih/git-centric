@@ -5,10 +5,10 @@ State: current baseline reconstructed from the development session and repositor
 ## Purpose and scope
 
 Git-centric stores collaboration metadata in Git. The current Python implementation
-provides a library, `gc` CLI, and FastAPI-hosted React SPA. Initialization is exposed
-through the library and CLI. The SPA and JSON-RPC endpoint currently demonstrate
-the `greet` operation. Pull requests, comments, gossip, authentication, and remote
-deployment are not implemented contracts in this baseline.
+provides a library, `gc` CLI, and FastAPI-hosted React SPA. Initialization, pull requests, issues, and conversations are exposed through
+the library and CLI. The SPA and JSON-RPC endpoint currently demonstrate the
+`greet` operation. Gossip, authentication, and remote deployment remain outside
+the implemented contracts. See the feature specs for domain behavior.
 
 ## Layout and dependencies
 

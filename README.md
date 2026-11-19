@@ -22,6 +22,7 @@ otherwise use `uv run gc` from `pygc/`.
 ```sh
 gc help                  # list commands
 gc pr --help             # list pull request commands
+gc issue --help          # list issue commands
 gc comment --help        # list comment commands
 gc pr show --help        # get help for a specific command
 ```
@@ -170,6 +171,60 @@ replies and their text, removing their links to the deleted comment. The `main`
 description cannot be deleted; clear it with `gc comment update PR_ID:main ""`.
 Previous contents remain available in Git history.
 
+## Issues
+
+Issues track work independently of branches. Each issue has an immutable random
+ID, title, `closed` flag, original author, and creation timestamp. The description
+is its editable `main` comment. New issues are open; closing is reversible and
+still allows comments.
+
+```sh
+gc issue new "Fix login" "Steps to reproduce"
+gc issue new "Fix login" @-              # description from stdin
+gc issue list                            # all issues, ordered by ID
+gc issue list open mine 'title=login.*'
+gc issue list closed 'author=name@example.com'
+gc issue show ISSUE_ID                    # JSON: issue and comments
+gc issue show ISSUE_ID --text             # details and reply tree
+gc issue update ISSUE_ID 'title=Revised title' close
+gc issue update ISSUE_ID reopen
+gc issue comments ISSUE_ID
+gc issue comment add ISSUE_ID "More detail"
+gc issue comment add ISSUE_ID:main "Reply to description"
+gc issue comment add ISSUE_ID:COMMENT_ID @-
+gc issue comment update ISSUE_ID:main "Revised description"
+gc issue comment delete ISSUE_ID:COMMENT_ID
+gc issue --help
+```
+
+Omitting the description creates an empty `main` comment. Filters combine with
+AND: `open`, `closed`, `mine`, `author=`, and `title=REGEX`. Author matches a name,
+email, or full Git identity; `mine` matches the current Git author email. Updates
+accept `title=`, `close`, and `reopen`. Unknown/repeated tokens, contradictory
+states, blank titles, and invalid regular expressions fail without writing.
+All leaf commands accept `--repo-dir PATH`; text containing spaces must be quoted.
+Commands output JSON by default; `show --text` provides a readable conversation.
+
+Issue comments use the same threaded model as PR comments. Multiple reply targets
+are supported as `ISSUE_ID:COMMENT_ID:OTHER_ID`. Text and trailing newlines are
+preserved; `@-` reads stdin for creation and comment add/update. Deleting a comment
+keeps replies and removes their links to it. `main` cannot be deleted; clear it
+with `gc issue comment update ISSUE_ID:main ""`. Existing `gc comment` commands
+continue to address PRs.
+
+Issues are stored on the existing `__git-centric__` branch under
+`__git-centric__/issues/ID:encoded-title/`, prefixed with `[closed]` when closed.
+Titles use percent escaping; comment blobs use `comment-ID[:REPLY_ID...]` names.
+Creator and creation time come from first-parent Git history by stable ID, so
+renaming or closing retains them. Existing initialized repositories need no
+migration. Writes preserve the checkout, index, PRs, and unrelated metadata.
+Concurrent publication fails instead of overwriting another writer; retry with a
+fresh operation. No-op updates create no commit. Any local Git author can edit;
+previous content remains in history.
+
+Issues are available through Python and the CLI. Labels, assignees, milestones,
+PR linking, issue deletion, and issue RPC/web UI are not implemented.
+
 ## Web interface
 
 ```sh
@@ -180,5 +235,5 @@ gc web --reload  # reload the server during development
 
 `gc web` starts the local web server at http://127.0.0.1:8000 by default. Build
 the frontend using the [setup instructions](pygc/README.md#requirements-and-setup)
-first. The current web interface is a greeting demo; pull request and comment
+first. The current web interface is a greeting demo; pull request, issue, and comment
 operations are available through the CLI.

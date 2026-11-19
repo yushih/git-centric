@@ -191,8 +191,14 @@ def _pr_text(details: library.PullRequestDetails) -> str:
                 path += f" ({change.similarity}% similar)"
             lines.append(f"  {change.status}: {path}")
     lines.extend(["", "Comments:"])
+    return "\n".join(lines) + "\n" + _conversation_text(details.comments)
+
+
+def _conversation_text(comments: tuple[library.Comment, ...]) -> str:
+    """Render either entity conversation with the same iterative tree layout."""
+    lines: list[str] = []
     children: dict[str | None, list[library.Comment]] = {}
-    for comment in details.comments:
+    for comment in comments:
         parent = comment.replies_to[0] if comment.replies_to else None
         children.setdefault(parent, []).append(comment)
     # Explicit stack avoids Python's recursion limit for long conversations.
@@ -306,3 +312,91 @@ def update_comment_command(target: str, text: str, repo_dir: RepoDir = None) -> 
 def delete_comment_command(target: str, repo_dir: RepoDir = None) -> None:
     """Delete PR_ID:COMMENT_ID and its reply links. Main must be cleared instead."""
     _output(library.delete_comment(target, directory=_directory(repo_dir)))
+
+
+issue_app = typer.Typer(no_args_is_help=True, help="Create, list, update and discuss issues.")
+issue_comment_app = typer.Typer(no_args_is_help=True, help="Add, update or delete issue comments.")
+app.add_typer(issue_app, name="issue")
+issue_app.add_typer(issue_comment_app, name="comment")
+
+
+@issue_app.command("new")
+def issue_new(title: str, comment: str = typer.Argument(""), repo_dir: RepoDir = None) -> None:
+    """Create an open issue: TITLE [COMMENT]. Quote text; @- reads stdin."""
+    import asyncio
+
+    _output(
+        asyncio.run(library.create_issue(title, _text(comment), directory=_directory(repo_dir)))
+    )
+
+
+@issue_app.command("list")
+def issue_list(
+    filters: Annotated[list[str] | None, typer.Argument()] = None, repo_dir: RepoDir = None
+) -> None:
+    """List all issues, or AND filters: open, closed, mine, author=, title=REGEX."""
+    _output(library.list_issues(filters or (), directory=_directory(repo_dir)))
+
+
+@issue_app.command("update")
+def issue_update(
+    identifier: str, updates: Annotated[list[str], typer.Argument()], repo_dir: RepoDir = None
+) -> None:
+    """Apply title=, close or reopen. Combined title/state updates are atomic."""
+    _output(library.update_issue(identifier, updates, directory=_directory(repo_dir)))
+
+
+@issue_app.command("show", no_args_is_help=True)
+def issue_show(
+    identifier: str,
+    text: Annotated[bool, typer.Option("--text", help="Show details and a reply tree.")] = False,
+    repo_dir: RepoDir = None,
+) -> None:
+    """Show issue fields and all comments as JSON; --text displays a reply tree."""
+    result = library.show_issue(identifier, directory=_directory(repo_dir))
+    if text and isinstance(result, library.Success):
+        issue = result.value.issue
+        typer.echo(
+            "\n".join(
+                [
+                    f"Issue {issue.id}",
+                    f"Title: {issue.title}",
+                    f"Author: {issue.author}",
+                    f"Created: {issue.created_at}",
+                    f"Closed: {str(issue.closed).lower()}",
+                    "",
+                    "Comments:",
+                    _conversation_text(result.value.comments),
+                ]
+            )
+        )
+    else:
+        _output(result)
+
+
+@issue_app.command("comments", no_args_is_help=True)
+def issue_comments(identifier: str, repo_dir: RepoDir = None) -> None:
+    """List issue comments as JSON, including exact text and reply IDs."""
+    _output(library.list_issue_comments(identifier, directory=_directory(repo_dir)))
+
+
+@issue_comment_app.command("add")
+def issue_comment_add(target: str, text: str, repo_dir: RepoDir = None) -> None:
+    """Append TEXT to ISSUE_ID[:COMMENT_ID...]. Quote text; @- reads stdin."""
+    import asyncio
+
+    _output(
+        asyncio.run(library.add_issue_comment(target, _text(text), directory=_directory(repo_dir)))
+    )
+
+
+@issue_comment_app.command("update")
+def issue_comment_update(target: str, text: str, repo_dir: RepoDir = None) -> None:
+    """Replace ISSUE_ID:COMMENT_ID text; @- reads stdin; empty text clears."""
+    _output(library.update_issue_comment(target, _text(text), directory=_directory(repo_dir)))
+
+
+@issue_comment_app.command("delete")
+def issue_comment_delete(target: str, repo_dir: RepoDir = None) -> None:
+    """Delete ISSUE_ID:COMMENT_ID and incoming reply links; main cannot be deleted."""
+    _output(library.delete_issue_comment(target, directory=_directory(repo_dir)))

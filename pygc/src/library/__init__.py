@@ -4,6 +4,18 @@ Git-centric operations return algebraic result values instead of throwing.
 """
 
 from .initialization import initialize_gc, is_gc_initialized
+from .issues import (
+    Issue,
+    IssueDetails,
+    add_issue_comment,
+    create_issue,
+    delete_issue_comment,
+    list_issue_comments,
+    list_issues,
+    show_issue,
+    update_issue,
+    update_issue_comment,
+)
 from .pull_requests import (
     Comment,
     FileChange,
@@ -21,6 +33,16 @@ from .pull_requests import (
 from .result import Failure, FailureReason, Result, Success
 
 __all__ = [
+    "Issue",
+    "IssueDetails",
+    "create_issue",
+    "update_issue",
+    "list_issues",
+    "show_issue",
+    "add_issue_comment",
+    "update_issue_comment",
+    "delete_issue_comment",
+    "list_issue_comments",
     "Comment",
     "FileChange",
     "PullRequest",

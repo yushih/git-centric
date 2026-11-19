@@ -9,6 +9,18 @@ from .library import (
     initialize_gc,
     is_gc_initialized,
 )
+from .library.issues import (
+    Issue,
+    IssueDetails,
+    add_issue_comment,
+    create_issue,
+    delete_issue_comment,
+    list_issue_comments,
+    list_issues,
+    show_issue,
+    update_issue,
+    update_issue_comment,
+)
 from .library.pull_requests import (
     Comment,
     FileChange,
@@ -25,6 +37,16 @@ from .library.pull_requests import (
 )
 
 __all__ = [
+    "Issue",
+    "IssueDetails",
+    "create_issue",
+    "update_issue",
+    "list_issues",
+    "show_issue",
+    "add_issue_comment",
+    "update_issue_comment",
+    "delete_issue_comment",
+    "list_issue_comments",
     "Comment",
     "FileChange",
     "PullRequest",

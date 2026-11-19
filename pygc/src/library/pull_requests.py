@@ -9,8 +9,7 @@ import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import NoReturn
-from urllib.parse import quote, unquote
+from urllib.parse import unquote
 
 from git import Repo
 from git.exc import GitCommandError
@@ -19,9 +18,6 @@ from .constants import (
     COMMENT_MAIN,
     COMMENT_PREFIX,
     GC_DIRECTORY,
-    GC_REF,
-    GIT_DIRECTORY_MODE,
-    GIT_REGULAR_FILE_MODE,
     PR_CLOSED,
     PR_COMPARE_SEPARATOR,
     PR_DIRECTORY,
@@ -29,8 +25,24 @@ from .constants import (
     PR_ID_SEPARATOR,
     PR_TITLE_SEPARATOR,
 )
+from .conversations import Comment as Comment
+from .conversations import read_comments
 from .ids import generate_id
 from .initialization import _branch_oid, _failure, _git, _git_result, _has_gc_directory
+from .metadata import (
+    _blob,
+    _encode,
+    _identifier,
+    _Problem,
+    _reject,
+    _subtree,
+    _title,
+    _tokens,
+    _tree,
+    _write_tree,
+    prepare_commit,
+    publish_commit,
+)
 from .result import Failure, FailureReason, Result, Success
 
 
@@ -45,13 +57,6 @@ class PullRequest:
     draft: bool = False
     closed: bool = False
     merged: bool = False
-
-
-@dataclass(frozen=True)
-class Comment:
-    id: str
-    text: str
-    replies_to: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -70,21 +75,6 @@ class PullRequestDetails:
     changed_files: tuple[FileChange, ...] | None
     conflicting_files: tuple[str, ...] | None
     merge_analysis_error: str | None
-
-
-class _Problem(Exception):
-    def __init__(self, reason: FailureReason, detail: str):
-        self.reason = reason
-        super().__init__(detail)
-
-
-def _reject(reason: FailureReason, detail: str) -> NoReturn:
-    raise _Problem(reason, detail)
-
-
-def _encode(value: str) -> str:
-    # urllib always leaves ~ unescaped, although it is a PR delimiter.
-    return quote(value, safe="").replace("~", "%7E")
 
 
 def _name(pr: PullRequest) -> str:
@@ -124,49 +114,6 @@ def _parse(name: str) -> PullRequest:
         raise _Problem(FailureReason.INVALID_METADATA, f"Malformed PR directory: {name}") from exc
 
 
-def _identifier(value: str) -> None:
-    if not re.fullmatch(r"[A-Za-z0-9_-]+", value):
-        _reject(FailureReason.INVALID_ARGUMENT, "IDs must contain letters, digits, _ or -")
-
-
-# Entries retain both mode and object ID, preserving unrelated blobs and subtrees.
-type Entries = dict[str, tuple[str, str, str]]
-
-
-def _tree(repo: Repo, oid: str) -> Entries:
-    entries = {}
-    for line in _git(repo, "ls-tree", "-z", oid).split("\0"):
-        if line:
-            metadata, name = line.split("\t", 1)
-            mode, kind, obj = metadata.split(" ")
-            entries[name] = (mode, kind, obj)
-    return entries
-
-
-def _subtree(repo: Repo, entries: Entries, name: str) -> Entries:
-    if name not in entries:
-        return {}
-    mode, kind, oid = entries[name]
-    if mode != GIT_DIRECTORY_MODE or kind != "tree":
-        _reject(FailureReason.INVALID_METADATA, f"Expected directory: {name}")
-    return _tree(repo, oid)
-
-
-def _write_tree(repo: Repo, entries: Entries) -> tuple[str, str, str]:
-    data = b"".join(
-        f"{mode} {kind} {oid}\t{name}\0".encode() for name, (mode, kind, oid) in entries.items()
-    )
-    return GIT_DIRECTORY_MODE, "tree", _git(repo, "mktree", "-z", stdin=data)
-
-
-def _blob(repo: Repo, text: str) -> tuple[str, str, str]:
-    return (
-        GIT_REGULAR_FILE_MODE,
-        "blob",
-        _git(repo, "hash-object", "-w", "--stdin", stdin=text.encode()),
-    )
-
-
 class _Store:
     def __init__(self, repo: Repo):
         self.repo = repo
@@ -192,16 +139,10 @@ class _Store:
         return self.records[identifier]
 
     def publish(self, message: str) -> None:
-        self.gc[PR_DIRECTORY] = _write_tree(self.repo, self.prs)
-        self.root[GC_DIRECTORY] = _write_tree(self.repo, self.gc)
-        tree = _write_tree(self.repo, self.root)[2]
-        commit = _git(self.repo, "commit-tree", tree, "-p", self.oid, "-m", message)
-        _git(
-            self.repo,
-            "update-ref",
-            "--stdin",
-            stdin=(f"option no-deref\nupdate {GC_REF} {commit} {self.oid}\n").encode(),
+        commit = prepare_commit(
+            self.repo, self.root, self.gc, self.prs, PR_DIRECTORY, self.oid, message, _git
         )
+        publish_commit(self.repo, commit, self.oid, _git)
 
 
 def _run[T](directory: str | Path, operation: Callable[[_Store], T]) -> Result[T]:
@@ -237,11 +178,6 @@ def _merged(repo: Repo, pr: PullRequest, branches: dict[str, str]) -> bool:
     return branches[pr.compare] in _git(repo, "rev-list", branches[pr.base]).splitlines()
 
 
-def _title(title: str) -> None:
-    if not title.strip() or "\0" in title:
-        _reject(FailureReason.INVALID_ARGUMENT, "Title must be nonblank and contain no NUL")
-
-
 async def create_pull_request(
     compare: str, base: str, title: str, comment: str = "", directory: str | Path = "."
 ) -> Result[PullRequest]:
@@ -267,18 +203,6 @@ async def create_pull_request(
         return pr
 
     return _run(directory, create)
-
-
-def _tokens(tokens: Sequence[str], keys: set[str], flags: set[str]) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for token in tokens:
-        key, sep, value = token.partition("=")
-        if (sep and key in keys and value) or (not sep and key in flags):
-            if key not in result:
-                result[key] = value
-                continue
-        _reject(FailureReason.INVALID_ARGUMENT, f"Invalid or repeated argument: {token}")
-    return result
 
 
 def _origins(store: _Store) -> dict[str, tuple[str, str]]:
@@ -414,38 +338,7 @@ def list_pull_requests(
 
 
 def _comments(store: _Store, name: str) -> list[Comment]:
-    result = []
-    for filename, (mode, kind, oid) in _subtree(store.repo, store.prs, name).items():
-        if (
-            not filename.startswith(COMMENT_PREFIX)
-            or mode != GIT_REGULAR_FILE_MODE
-            or kind != "blob"
-        ):
-            _reject(FailureReason.INVALID_METADATA, f"Invalid comment: {filename}")
-        identifier, *replies = filename[len(COMMENT_PREFIX) :].split(PR_TITLE_SEPARATOR)
-        try:
-            for value in (identifier, *replies):
-                _identifier(value)
-        except _Problem as exc:
-            # These IDs came from committed data, not the caller's arguments.
-            raise _Problem(
-                FailureReason.INVALID_METADATA, f"Invalid comment filename: {filename}"
-            ) from exc
-        # GitPython's default string output strips trailing newlines. Read blob
-        # bytes directly to preserve comments exactly, including stdin text.
-        try:
-            text = store.repo.odb.stream(bytes.fromhex(oid)).read().decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise _Problem(
-                FailureReason.INVALID_METADATA, f"Comment is not UTF-8: {filename}"
-            ) from exc
-        result.append(Comment(identifier, text, tuple(replies)))
-    ids = [comment.id for comment in result]
-    if len(ids) != len(set(ids)) or COMMENT_MAIN not in ids:
-        _reject(FailureReason.INVALID_METADATA, "Duplicate comment IDs or missing main comment")
-    if any(reply not in ids for comment in result for reply in comment.replies_to):
-        _reject(FailureReason.INVALID_METADATA, "Dangling comment reply")
-    return sorted(result, key=lambda comment: (comment.id != COMMENT_MAIN, comment.id))
+    return read_comments(store.repo, _subtree(store.repo, store.prs, name))
 
 
 def list_comments(identifier: str, directory: str | Path = ".") -> Result[list[Comment]]:

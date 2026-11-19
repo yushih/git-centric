@@ -9,6 +9,8 @@ evidence. This workflow is local Markdown and requires no external SDD tooling.
 | --- | --- | --- |
 | [architecture.md](architecture.md) | Package layout, boundaries, tools, interfaces | Current baseline |
 | [features/001-initialization.md](features/001-initialization.md) | Initialization API, CLI, and repository invariants | Implemented; verification tracked separately |
+| [features/002-pull-requests.md](features/002-pull-requests.md) | Pull requests and conversations | Implemented; see feature and change records |
+| [features/003-issues.md](features/003-issues.md) | Issue fields, storage, commands, and implementation plan | Verified; see feature evidence |
 | [templates/change.md](templates/change.md) | Spec, plan, task, and evidence template for new work | Reusable template |
 
 The baseline captures the session's decisions and current implementation. It does
