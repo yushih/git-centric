@@ -40,7 +40,9 @@ def test_rpc_success(params: object) -> None:
         "/api/rpc", json={"jsonrpc": "2.0", "method": "greet", "params": params, "id": 1}
     )
     assert response.json() == {
-        "jsonrpc": "2.0", "result": greet("world" if params == {} else "Ada"), "id": 1
+        "jsonrpc": "2.0",
+        "result": greet("world" if params == {} else "Ada"),
+        "id": 1,
     }
 
 

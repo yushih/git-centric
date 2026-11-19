@@ -73,8 +73,8 @@ errors; unexpected exceptions are logged and returned as generic internal errors
 ## Layout and extension
 
 ```text
-src/pygc/
-  library.py       Transport-independent functions
+src/
+  library/         Transport-independent functions (public API in __init__.py)
   cli.py           Typer commands and gc web launcher
   rpc.py           Explicit method registry and protocol adapter
   web.py           FastAPI app factory and static hosting
@@ -86,9 +86,12 @@ frontend/
 tests/             Library, CLI, server, and protocol tests
 ```
 
-To add an operation, implement it in `library.py`, export it in `__init__.py`, add
+To add an operation, implement it in `src/library/`, export it in `src/__init__.py`, add
 a Typer command, register a validated callable in `rpc.METHODS`, and extend the
 TypeScript `Methods` contract, response validation, and React interface.
+The setuptools build configuration maps `src/` to the installed `pygc` package, so imports
+remain `from pygc import greet`. Editable installs use the same mapping.
+
 Only explicitly registered functions are callable through RPC. Synchronous
 library calls run in a worker thread, keeping the server event loop available.
 

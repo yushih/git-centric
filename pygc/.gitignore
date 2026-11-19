@@ -5,7 +5,8 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 dist/
+build/
 *.egg-info/
 node_modules/
-src/pygc/static/*
-!src/pygc/static/.gitkeep
+src/static/*
+!src/static/.gitkeep

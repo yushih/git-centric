@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from pygc.rpc import error, handle
+from .rpc import error, handle
 
 
 def create_app(static_dir: Path | None = None) -> FastAPI:

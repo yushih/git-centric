@@ -8,7 +8,7 @@ export default defineConfig({
     proxy: { "/api": "http://127.0.0.1:8000" },
   },
   build: {
-    outDir: fileURLToPath(new URL("../src/pygc/static", import.meta.url)),
+    outDir: fileURLToPath(new URL("../src/static", import.meta.url)),
     emptyOutDir: true,
   },
 });

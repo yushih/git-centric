@@ -5,7 +5,7 @@ from typing import Annotated
 import typer
 import uvicorn
 
-from pygc import library
+from . import library
 
 app = typer.Typer(no_args_is_help=True, help="Git-centric command line tools.")
 

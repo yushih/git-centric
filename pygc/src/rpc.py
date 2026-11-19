@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import ConfigDict, ValidationError, validate_call
 
-from pygc import library
+from . import library
 
 logger = logging.getLogger(__name__)
 METHODS: dict[str, Callable[..., Any]] = {
