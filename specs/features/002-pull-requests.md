@@ -103,3 +103,8 @@ All writers follow the [descriptive commit message contract](../changes/2026-11-
 
 PR-008: `gc pr show PR_ID [--text]` displays the full PR and conversation, per
 [SHOW-001–004](../changes/2026-11-19-pr-show.md). JSON is the default.
+
+PR-009: Show reports merge conflicts, conflicting file paths, and compare-side
+file change records (including rename/copy sources and change types) using the
+[merge analysis contract](../changes/2026-11-19-pr-merge-analysis.md), without
+modifying the checkout, index, or refs.

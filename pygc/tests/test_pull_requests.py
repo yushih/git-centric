@@ -690,6 +690,10 @@ def test_show_pr_json_and_text_tree(ready: Path, monkeypatch) -> None:
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == {
         "pull_request": asdict(details.pull_request),
+        "merge_conflicts": False,
+        "conflicting_files": [],
+        "changed_files": [],
+        "merge_analysis_error": None,
         "comments": [
             dict(id=c.id, text=c.text, replies_to=list(c.replies_to)) for c in details.comments
         ],
@@ -791,3 +795,214 @@ def test_show_deep_tree(ready: Path, monkeypatch) -> None:
     assert result.exit_code == 0, result.exception
     assert result.stdout.count("[reply-") == 1050
     assert "[reply-1049]" in result.stdout
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+def test_show_merge_analysis_preserves_checkout(ready: Path, monkeypatch, conflict: bool) -> None:
+    # Divergent branches exercise real merge simulation. Feature changes include
+    # modification, deletion, rename and unusual filenames; base-only work is excluded.
+    import json
+
+    from pygc import show_pull_request
+
+    for name in ("shared", "deleted", "old"):
+        (ready / name).write_text(f"original {name}\n")
+    git(ready, "add", ".")
+    git(ready, "commit", "-m", "Common files")
+    git(ready, "update-ref", "refs/heads/main", git(ready, "rev-parse", "HEAD"))
+    (ready / "shared").write_text("feature\n")
+    (ready / "deleted").unlink()
+    git(ready, "mv", "old", "new")
+    unusual = "café space\nline"
+    (ready / unusual).write_text("added\n")
+    git(ready, "add", "-A")
+    git(ready, "commit", "-m", "Feature files")
+    git(ready, "checkout", "main")
+    (ready / ("shared" if conflict else "base-only")).write_text("base\n")
+    git(ready, "add", ".")
+    git(ready, "commit", "-m", "Base work")
+    item = create(ready)
+    # Snapshot dirty staged/unstaged/untracked work plus all refs independently.
+    (ready / "shared").write_text("staged\n")
+    git(ready, "add", "shared")
+    (ready / "shared").write_text("unstaged\n")
+    (ready / "untracked").write_text("keep\n")
+    index = (ready / ".git/index").read_bytes()
+    refs = git(ready, "show-ref")
+    head = git(ready, "rev-parse", "HEAD")
+    result = show_pull_request(item.id, ready)
+    assert isinstance(result, Success), result
+    assert result.value.merge_conflicts is conflict
+    expected = [
+        dict(status="added", path=unusual, old_path=None, similarity=None),
+        dict(status="deleted", path="deleted", old_path=None, similarity=None),
+        dict(status="renamed", path="new", old_path="old", similarity=100),
+        dict(status="modified", path="shared", old_path=None, similarity=None),
+    ]
+    from dataclasses import asdict
+
+    assert [asdict(change) for change in result.value.changed_files] == expected
+    assert result.value.conflicting_files == (("shared",) if conflict else ())
+    assert result.value.merge_analysis_error is None
+    assert git(ready, "show-ref") == refs and git(ready, "rev-parse", "HEAD") == head
+    assert (ready / ".git/index").read_bytes() == index
+    assert (ready / "shared").read_text() == "unstaged\n"
+    assert (ready / "untracked").read_text() == "keep\n"
+    assert not (ready / ".git/MERGE_HEAD").exists()
+    monkeypatch.chdir(ready)
+    runner = CliRunner()
+    payload = json.loads(runner.invoke(app, ["pr", "show", item.id]).stdout)
+    assert payload["merge_conflicts"] is conflict and payload["changed_files"] == expected
+    assert payload["conflicting_files"] == (["shared"] if conflict else [])
+    shown = runner.invoke(app, ["pr", "show", item.id, "--text"])
+    assert shown.exit_code == 0
+    assert f"Merge conflicts: {'yes' if conflict else 'no'}" in shown.stdout
+    assert json.dumps(unusual, ensure_ascii=False) in shown.stdout
+    assert 'renamed: "old" -> "new" (100% similar)' in shown.stdout
+    assert 'deleted: "deleted"' in shown.stdout
+    if conflict:
+        assert 'Conflicting files:\n  "shared"' in shown.stdout
+
+
+def test_show_merge_analysis_unavailable_and_bare(ready: Path, tmp_path: Path, monkeypatch) -> None:
+    # Bare repositories support the same plumbing. Missing branches and unrelated
+    # histories produce unknown rather than a misleading clean/empty report.
+    from pygc import show_pull_request
+
+    item = create(ready)
+    bare = tmp_path / "bare.git"
+    git(tmp_path, "clone", "--bare", str(ready), str(bare))
+    assert show_pull_request(item.id, bare).value.merge_conflicts is False
+    tree = git(bare, "rev-parse", "main^{tree}")
+    root = git(bare, "commit-tree", tree, "-m", "Unrelated root")
+    git(bare, "update-ref", "refs/heads/main", root)
+    details = show_pull_request(item.id, bare).value
+    assert details.merge_conflicts is None and details.changed_files is None
+    assert details.conflicting_files is None
+    assert "unrelated" in details.merge_analysis_error
+    git(bare, "branch", "-D", "main")
+    details = show_pull_request(item.id, bare).value
+    assert details.merge_conflicts is None and details.changed_files is None
+    assert details.conflicting_files is None
+    assert details.merge_analysis_error == "Missing branches: main"
+    assert details.pull_request.id == item.id and len(details.comments) == 1
+    monkeypatch.chdir(bare)
+    shown = CliRunner().invoke(app, ["pr", "show", item.id, "--text"])
+    assert shown.exit_code == 0 and "Merge conflicts: unknown" in shown.stdout
+    assert "Changed files: unavailable" in shown.stdout
+
+
+def test_show_merge_analysis_errors_and_captured_tips(ready: Path) -> None:
+    # Branch movement after capture cannot mix tips in diff/merge/merged results.
+    # Operational failures (including unsupported merge-tree) are not conflicts.
+    from git.exc import GitCommandError
+
+    from pygc import show_pull_request
+
+    item = create(ready)
+    captured = {name: git(ready, "rev-parse", name) for name in ("main", "feature/login")}
+    original = pr._git
+
+    def move_branch(repository, *args, **kwargs):
+        if args[0] == "merge-base":
+            git(ready, "update-ref", "refs/heads/main", captured["feature/login"])
+        if args[0] in ("merge-base", "merge-tree"):
+            assert args[-2:] == (captured["main"], captured["feature/login"])
+        return original(repository, *args, **kwargs)
+
+    original_result = pr._git_result
+
+    def captured_merge(repository, *args):
+        assert args[-2:] == (captured["main"], captured["feature/login"])
+        return original_result(repository, *args)
+
+    with (
+        patch.object(pr, "_git", side_effect=move_branch),
+        patch.object(pr, "_git_result", side_effect=captured_merge),
+    ):
+        details = show_pull_request(item.id, ready).value
+    assert not details.pull_request.merged and details.merge_conflicts is False
+    assert show_pull_request(item.id, ready).value.pull_request.merged
+
+    def fail_merge(repository, *args, **kwargs):
+        if args[0] == "merge-tree":
+            raise GitCommandError(["git", "merge-tree"], 129, stderr="unsupported")
+        return original(repository, *args, **kwargs)
+
+    with patch.object(pr, "_git_result", side_effect=fail_merge):
+        result = show_pull_request(item.id, ready)
+    assert isinstance(result, Failure) and result.reason == FailureReason.GIT_ERROR
+
+
+def test_show_copy_and_type_changes(ready: Path) -> None:
+    # Copy detection includes unchanged sources; replacing a regular file with
+    # a symlink is a type change rather than a text modification.
+    from pygc import show_pull_request
+
+    (ready / "source").write_text("unique source content\n" * 20)
+    (ready / "kind").write_text("regular file\n")
+    git(ready, "add", ".")
+    git(ready, "commit", "-m", "Common copy sources")
+    git(ready, "update-ref", "refs/heads/main", git(ready, "rev-parse", "HEAD"))
+    destination = "copy\twith\nspacing"
+    (ready / destination).write_bytes((ready / "source").read_bytes())
+    (ready / "kind").unlink()
+    (ready / "kind").symlink_to("source")
+    git(ready, "add", ".")
+    git(ready, "commit", "-m", "Copy source and change file type")
+    details = show_pull_request(create(ready).id, ready).value
+    changes = {change.path: change for change in details.changed_files}
+    assert changes[destination].status == "copied"
+    assert changes[destination].old_path == "source" and changes[destination].similarity == 100
+    assert changes["kind"].status == "type_changed" and changes["kind"].old_path is None
+    assert len(changes) == 2
+    assert details.conflicting_files == () and details.merge_conflicts is False
+
+
+@pytest.mark.parametrize("kind", ["add_add", "modify_delete"])
+def test_show_conflict_file_names(ready: Path, monkeypatch, kind: str) -> None:
+    # Machine-readable conflict paths must survive spaces, tabs and newlines,
+    # without stage duplicates or accidentally including Git's diagnostic text.
+    import json
+
+    from pygc import show_pull_request
+
+    name = "conflict café\tline\nfile"
+    if kind == "modify_delete":
+        (ready / name).write_text("common\n")
+        git(ready, "add", ".")
+        git(ready, "commit", "-m", "Common conflicted file")
+    git(ready, "update-ref", "refs/heads/main", git(ready, "rev-parse", "HEAD"))
+    (ready / name).write_text("feature\n")
+    git(ready, "add", ".")
+    git(ready, "commit", "-m", "Feature conflicting content")
+    git(ready, "checkout", "main")
+    if kind == "modify_delete":
+        (ready / name).unlink()
+    else:
+        (ready / name).write_text("base\n")
+    git(ready, "add", "-A")
+    git(ready, "commit", "-m", "Base conflicting content")
+    item = create(ready)
+    details = show_pull_request(item.id, ready).value
+    assert details.merge_conflicts is True and details.conflicting_files == (name,)
+    assert details.changed_files[0].status == ("added" if kind == "add_add" else "modified")
+    monkeypatch.chdir(ready)
+    result = CliRunner().invoke(app, ["pr", "show", item.id, "--text"])
+    assert result.exit_code == 0
+    assert "Conflicting files:\n  " + json.dumps(name, ensure_ascii=False) in result.stdout
+
+
+def test_show_conflict_status_without_unmerged_paths(ready: Path) -> None:
+    # Git can report structural conflicts without unmerged entries. Preserve
+    # its status rather than incorrectly inferring a clean merge from an empty list.
+    from pygc import show_pull_request
+
+    item = create(ready)
+    tree = git(ready, "rev-parse", "main^{tree}")
+    with patch.object(pr, "_git_result", return_value=(1, tree + "\0")):
+        details = show_pull_request(item.id, ready).value
+    assert details.merge_conflicts is True and details.conflicting_files == ()
+    from pygc.cli import _pr_text
+
+    assert "Conflicting files: none reported by Git" in _pr_text(details)

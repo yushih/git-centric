@@ -146,7 +146,20 @@ is shorthand for `gc comment add PR_ID TEXT`. Use explicit `add` if a target ID
 is one of those action words. `gc comment --help` lists the actions.
 
 `gc pr show PR_ID` returns `{"pull_request": {...}, "comments": [...]}` with
-all PR fields and complete comment records. `--text` displays PR details and an
+all PR fields and complete comment records, plus `merge_conflicts`, `changed_files`,
+`conflicting_files`, and `merge_analysis_error`. Changes are compare-side changes
+since the merge base. Each changed-file record has `status`, `path`, `old_path`,
+and `similarity`: added/modified/deleted/type_changed files have null old_path
+and similarity; renamed/copied files identify source, destination and similarity
+percentage. Git detects renames/copies heuristically. `conflicting_files` lists
+conflicted paths ([] when clean, null when unavailable). Some structural conflicts
+may have no file entries; merge_conflicts still reports true in that case.
+Text mode labels each change and shows source -> destination for moves/copies.
+Conflict detection simulates merging compare into
+base with Git 2.38+ `merge-tree`, without touching the checkout, index or refs;
+it may create unreachable Git objects. Missing branches or unrelated histories
+produce null analysis fields with an explanation. Other Git failures fail the
+command. `--text` displays this analysis, PR details and an
 ASCII comment tree: the first reply ID determines the parent; multi-target
 comments list all targets explicitly. Comments without reply IDs are roots,
 with `main` first. Siblings are ordered by ID. `--repo-dir` works in both modes.

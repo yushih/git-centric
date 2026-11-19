@@ -41,6 +41,28 @@ def _git(repo: Repo, *args: str, stdin: bytes | None = None) -> str:
         return str(repo.git.execute(command, istream=stream))
 
 
+def _git_result(repo: Repo, *args: str) -> tuple[int, str]:
+    """Retain raw plumbing output and status, allowing an expected conflict exit."""
+    from git.exc import GitCommandError
+
+    command = [
+        str(Git.GIT_PYTHON_GIT_EXECUTABLE),
+        "--no-replace-objects",
+        "--git-dir",
+        str(repo.git_dir),
+        *args,
+    ]
+    status, output, error = repo.git.execute(
+        command, with_extended_output=True, with_exceptions=False
+    )
+    if status not in (0, 1):
+        raise GitCommandError(command, status, stderr=error, stdout=output)
+    # GitCommandError.stdout is presentation text with wrappers, not raw output.
+    # Callers need both status and NUL-delimited stdout to recognize conflicts
+    # even in special cases where Git reports no unmerged file entries.
+    return status, output
+
+
 def _branch_oid(repo: Repo) -> str | None:
     """Find only the local metadata branch, not a tag or remote-tracking ref."""
     # for-each-ref succeeds with empty output for an absent branch. Other Git

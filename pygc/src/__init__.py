@@ -11,6 +11,7 @@ from .library import (
 )
 from .library.pull_requests import (
     Comment,
+    FileChange,
     PullRequest,
     PullRequestDetails,
     add_comment,
@@ -25,6 +26,7 @@ from .library.pull_requests import (
 
 __all__ = [
     "Comment",
+    "FileChange",
     "PullRequest",
     "PullRequestDetails",
     "show_pull_request",

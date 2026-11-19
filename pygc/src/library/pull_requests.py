@@ -13,6 +13,7 @@ from typing import NoReturn
 from urllib.parse import quote, unquote
 
 from git import Repo
+from git.exc import GitCommandError
 
 from .constants import (
     COMMENT_MAIN,
@@ -29,7 +30,7 @@ from .constants import (
     PR_TITLE_SEPARATOR,
 )
 from .ids import generate_id
-from .initialization import _branch_oid, _failure, _git, _has_gc_directory
+from .initialization import _branch_oid, _failure, _git, _git_result, _has_gc_directory
 from .result import Failure, FailureReason, Result, Success
 
 
@@ -54,9 +55,21 @@ class Comment:
 
 
 @dataclass(frozen=True)
+class FileChange:
+    status: str
+    path: str
+    old_path: str | None = None
+    similarity: int | None = None
+
+
+@dataclass(frozen=True)
 class PullRequestDetails:
     pull_request: PullRequest
     comments: tuple[Comment, ...]
+    merge_conflicts: bool | None
+    changed_files: tuple[FileChange, ...] | None
+    conflicting_files: tuple[str, ...] | None
+    merge_analysis_error: str | None
 
 
 class _Problem(Exception):
@@ -440,6 +453,70 @@ def list_comments(identifier: str, directory: str | Path = ".") -> Result[list[C
     return _run(directory, lambda store: _comments(store, store.get(identifier)[0]))
 
 
+def _merge_analysis(
+    repo: Repo, pr: PullRequest, branches: dict[str, str]
+) -> tuple[bool | None, tuple[str, ...] | None, tuple[FileChange, ...] | None, str | None]:
+    """Analyze captured tips using plumbing, never the caller's checkout/index."""
+    missing = [name for name in dict.fromkeys((pr.compare, pr.base)) if name not in branches]
+    if missing:
+        return None, None, None, f"Missing branches: {', '.join(missing)}"
+    base, compare = branches[pr.base], branches[pr.compare]
+    try:
+        ancestor = _git(repo, "merge-base", base, compare)
+    except GitCommandError as exc:
+        if exc.status == 1:
+            return None, None, None, "Branches have unrelated histories"
+        raise
+    # Use the feature-side diff rather than tip-to-tip: base-only work is not
+    # part of this PR. NUL separation avoids Git's filename quoting convention.
+    output = _git(
+        repo,
+        "diff",
+        "--name-status",
+        "--find-renames",
+        "--find-copies",
+        "--find-copies-harder",
+        "-z",
+        ancestor,
+        compare,
+        "--",
+    )
+    fields = iter(output.split("\0")[:-1])
+    changes = []
+    kinds = {
+        "A": "added",
+        "M": "modified",
+        "D": "deleted",
+        "R": "renamed",
+        "C": "copied",
+        "T": "type_changed",
+        "U": "unmerged",
+        "X": "unknown",
+        "B": "broken",
+    }
+    for status in fields:
+        path = next(fields)
+        if status[0] in {"R", "C"}:
+            changes.append(FileChange(kinds[status[0]], next(fields), path, int(status[1:])))
+        else:
+            changes.append(FileChange(kinds.get(status[0], "unknown"), path))
+    # The first NUL-delimited field is the resulting tree OID. Remaining fields
+    # are conflicted paths; --no-messages excludes human-readable diagnostics.
+    # Exit 1 is expected for conflicts, while other errors remain Git failures.
+    merge_status, merge = _git_result(
+        repo,
+        "merge-tree",
+        "--write-tree",
+        "--name-only",
+        "--no-messages",
+        "-z",
+        base,
+        compare,
+    )
+    conflicts = tuple(sorted(set(path for path in merge.split("\0")[1:] if path)))
+    return merge_status == 1, conflicts, tuple(changes), None
+
+
 def show_pull_request(identifier: str, directory: str | Path = ".") -> Result[PullRequestDetails]:
     """Read a complete conversation from a single captured metadata commit."""
 
@@ -460,13 +537,22 @@ def show_pull_request(identifier: str, directory: str | Path = ".") -> Result[Pu
                 current = parents[current]
             complete.update(path)
         author, created_at = _origins(store)[identifier]
+        branches = _branches(store.repo)
         pr = replace(
             pr,
             author=author,
             created_at=created_at,
-            merged=_merged(store.repo, pr, _branches(store.repo)),
+            merged=_merged(store.repo, pr, branches),
         )
-        return PullRequestDetails(pr, tuple(comments))
+        has_conflicts, conflicts, files, error = _merge_analysis(store.repo, pr, branches)
+        return PullRequestDetails(
+            pr,
+            tuple(comments),
+            has_conflicts,
+            files,
+            conflicts,
+            error,
+        )
 
     return _run(directory, show)
 

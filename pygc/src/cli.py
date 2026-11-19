@@ -151,6 +151,8 @@ def pr_list(
 
 def _pr_text(details: library.PullRequestDetails) -> str:
     """Render a validated conversation without recursion or Markdown styling."""
+    import json
+
     pr = details.pull_request
     lines = [
         f"PR {pr.id}",
@@ -162,8 +164,33 @@ def _pr_text(details: library.PullRequestDetails) -> str:
         f"Draft: {str(pr.draft).lower()}  Closed: {str(pr.closed).lower()}  "
         f"Merged: {str(pr.merged).lower()}",
         "",
-        "Comments:",
     ]
+    conflict = (
+        "unknown" if details.merge_conflicts is None else "yes" if details.merge_conflicts else "no"
+    )
+    lines.append(f"Merge conflicts: {conflict}")
+    if details.conflicting_files:
+        lines.append("Conflicting files:")
+        lines.extend(
+            "  " + json.dumps(path, ensure_ascii=False) for path in details.conflicting_files
+        )
+    elif details.merge_conflicts:
+        lines.append("Conflicting files: none reported by Git")
+    if details.merge_analysis_error:
+        lines.append(f"Merge analysis: {details.merge_analysis_error}")
+    if details.changed_files is None:
+        lines.append("Changed files: unavailable")
+    elif not details.changed_files:
+        lines.append("Changed files: none")
+    else:
+        lines.append("Changed files:")
+        for change in details.changed_files:
+            path = json.dumps(change.path, ensure_ascii=False)
+            if change.old_path is not None:
+                path = f"{json.dumps(change.old_path, ensure_ascii=False)} -> {path}"
+                path += f" ({change.similarity}% similar)"
+            lines.append(f"  {change.status}: {path}")
+    lines.extend(["", "Comments:"])
     children: dict[str | None, list[library.Comment]] = {}
     for comment in details.comments:
         parent = comment.replies_to[0] if comment.replies_to else None
@@ -202,6 +229,7 @@ def pr_show(
 ) -> None:
     """Show a pull request and all comments as JSON; --text displays a reply tree.
 
+    Includes conflicting paths and file change types since the merge base.
     Multiple reply targets use the first as tree parent and list all targets.
     """
     result = library.show_pull_request(identifier, directory=_directory(repo_dir))

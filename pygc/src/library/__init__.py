@@ -6,6 +6,7 @@ Git-centric operations return algebraic result values instead of throwing.
 from .initialization import initialize_gc, is_gc_initialized
 from .pull_requests import (
     Comment,
+    FileChange,
     PullRequest,
     PullRequestDetails,
     add_comment,
@@ -21,6 +22,7 @@ from .result import Failure, FailureReason, Result, Success
 
 __all__ = [
     "Comment",
+    "FileChange",
     "PullRequest",
     "PullRequestDetails",
     "show_pull_request",
