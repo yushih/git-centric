@@ -153,7 +153,9 @@ Metadata follows `pull-requests/c~>b#id:title/comment-id[:reply-id...]` under th
 reserved directory. Components use percent escaping for separators, spaces,
 slashes and percent signs, so branch names such as `feature/login` round-trip.
 The initial comment is always `comment-main`. Multiple reply IDs are supported.
-No command edits existing comments. Git history supplies PR creator and creation
+No command edits existing comments. Malformed stored comment filenames or
+non-UTF-8 bodies return `invalid_metadata`; invalid caller-supplied IDs return
+`invalid_argument`. Git history supplies PR creator and creation
 time, tracked by stable ID through directory renames along first-parent history.
 Writes preserve the checkout and index and atomically append to metadata history;
 a concurrent update fails instead of overwriting it. Failed writes may leave

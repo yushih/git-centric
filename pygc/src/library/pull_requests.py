@@ -353,11 +353,22 @@ def _comments(store: _Store, name: str) -> list[Comment]:
         ):
             _reject(FailureReason.INVALID_METADATA, f"Invalid comment: {filename}")
         identifier, *replies = filename[len(COMMENT_PREFIX) :].split(PR_TITLE_SEPARATOR)
-        for value in (identifier, *replies):
-            _identifier(value)
+        try:
+            for value in (identifier, *replies):
+                _identifier(value)
+        except _Problem as exc:
+            # These IDs came from committed data, not the caller's arguments.
+            raise _Problem(
+                FailureReason.INVALID_METADATA, f"Invalid comment filename: {filename}"
+            ) from exc
         # GitPython's default string output strips trailing newlines. Read blob
         # bytes directly to preserve comments exactly, including stdin text.
-        text = store.repo.odb.stream(bytes.fromhex(oid)).read().decode("utf-8")
+        try:
+            text = store.repo.odb.stream(bytes.fromhex(oid)).read().decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise _Problem(
+                FailureReason.INVALID_METADATA, f"Comment is not UTF-8: {filename}"
+            ) from exc
         result.append(Comment(identifier, text, tuple(replies)))
     ids = [comment.id for comment in result]
     if len(ids) != len(set(ids)) or COMMENT_MAIN not in ids:

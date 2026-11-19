@@ -23,6 +23,7 @@ An async generate_id(kind) returns a random UUID string for pull_request/comment
   ready removes draft only; it does not reopen closed requests.
 - PR-004: `gc pr comments id` lists comments; `gc comment pr[:reply-id...] text`
   appends a comment addressing existing comments. @- reads stdin verbatim.
+  Malformed stored comment IDs and non-UTF-8 text return invalid_metadata.
   Fixed argument counts reject extra words; variable arguments reject unknown tokens.
 - PR-005: Every explicitly supplied branch must be an existing local branch.
   Missing branches during later inspection mean merged cannot be established.

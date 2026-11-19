@@ -223,3 +223,94 @@ def test_operational_failures_and_malformed_metadata(ready: Path) -> None:
         store.prs["not-a-pr"] = pr._write_tree(repository, {})
         store.publish("Malformed fixture")
     assert list_pull_requests(directory=ready).reason == FailureReason.INVALID_METADATA
+
+
+def test_comment_threads_preserve_original_blobs(ready: Path, monkeypatch) -> None:
+    # A second author may reply to several comments without rewriting any prior blob.
+    item = create(ready)
+    path = next(
+        name.rsplit("/", 1)[0]
+        for name in git(ready, "ls-tree", "-r", "--name-only", GC_REF).splitlines()
+        if name.endswith("/comment-main")
+    )
+    main_blob = git(ready, "rev-parse", f"{GC_REF}:{path}/comment-main")
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "Reviewer")
+    monkeypatch.setenv("GIT_AUTHOR_EMAIL", "reviewer@example.invalid")
+    first = asyncio.run(add_comment(item.id, "First review", ready)).value
+    before = git(ready, "rev-parse", GC_REF)
+    text = "Unicode café 日本語\n\n  trailing spaces  \n"
+    reply = asyncio.run(add_comment(f"{item.id}:main:{first.id}", text, ready)).value
+    after = git(ready, "rev-parse", GC_REF)
+    filename = f"{path}/comment-{reply.id}:main:{first.id}"
+    assert git(ready, "rev-list", "--parents", "-n", "1", GC_REF) == f"{after} {before}"
+    assert git(ready, "rev-parse", f"{GC_REF}:{path}/comment-main") == main_blob
+    assert git(ready, "show", "-s", "--format=%ae", after) == "reviewer@example.invalid"
+    # check_output without strip independently verifies every stored text byte.
+    import subprocess
+
+    assert (
+        subprocess.check_output(["git", "-C", str(ready), "show", f"{GC_REF}:{filename}"])
+        == text.encode()
+    )
+    assert isinstance(update_pull_request(item.id, ["title=Moved conversation"], ready), Success)
+    comments = list_comments(item.id, ready).value
+    assert next(comment for comment in comments if comment.id == reply.id) == reply
+    assert reply.replies_to == ("main", first.id)
+
+
+@pytest.mark.parametrize("corruption", ["id", "utf8", "missing-main", "dangling", "duplicate"])
+def test_corrupt_comments_are_metadata_failures(ready: Path, corruption: str) -> None:
+    # Both readers and writers refuse corrupt conversations without publishing a new ref.
+    item = create(ready)
+    with pr.Repo(ready) as repository:
+        store = pr._Store(repository)
+        name, _ = store.get(item.id)
+        entries = pr._subtree(repository, store.prs, name)
+        if corruption == "id":
+            entries["comment-invalid!"] = pr._blob(repository, "body")
+        elif corruption == "utf8":
+            blob = pr._git(repository, "hash-object", "-w", "--stdin", stdin=b"\xff")
+            entries["comment-invalid"] = ("100644", "blob", blob)
+        elif corruption == "missing-main":
+            entries.pop("comment-main")
+        elif corruption == "dangling":
+            entries["comment-reply:missing"] = pr._blob(repository, "body")
+        else:
+            entries["comment-main:main"] = pr._blob(repository, "body")
+        store.prs[name] = pr._write_tree(repository, entries)
+        store.publish("Corrupt conversation fixture")
+    before = git(ready, "rev-parse", GC_REF)
+    for result in (list_comments(item.id, ready), asyncio.run(add_comment(item.id, "body", ready))):
+        assert isinstance(result, Failure)
+        assert result.reason == FailureReason.INVALID_METADATA
+    assert git(ready, "rev-parse", GC_REF) == before
+
+
+def test_concurrent_comment_is_not_lost(ready: Path) -> None:
+    # Inject an actual competing append just before publication; the losing writer must fail.
+    item = create(ready)
+    original = pr._git
+    winner = None
+
+    def race(repository, *args, **kwargs):
+        nonlocal winner
+        if args[0] == "update-ref":
+            # A separate store models another process, avoiding nested asyncio.run.
+            with patch.object(pr, "_git", original):
+                store = pr._Store(repository)
+                name, _ = store.get(item.id)
+                entries = pr._subtree(repository, store.prs, name)
+                entries["comment-winner:main"] = pr._blob(repository, "Competing reply")
+                store.prs[name] = pr._write_tree(repository, entries)
+                store.publish("Concurrent comment")
+                winner = git(ready, "rev-parse", GC_REF)
+        return original(repository, *args, **kwargs)
+
+    with patch.object(pr, "_git", side_effect=race):
+        result = asyncio.run(add_comment(item.id, "Losing reply", ready))
+    assert isinstance(result, Failure) and result.reason == FailureReason.GIT_ERROR
+    assert git(ready, "rev-parse", GC_REF) == winner
+    assert [comment.text for comment in list_comments(item.id, ready).value] == [
+        "initial\n\n",
+        "Competing reply",
+    ]
