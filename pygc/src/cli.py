@@ -7,6 +7,8 @@ import typer
 import uvicorn
 from git import Repo
 from git.exc import GitError
+from typer._click.core import Context as ClickContext
+from typer.core import TyperGroup
 
 from . import library
 
@@ -161,7 +163,30 @@ def pr_comments(identifier: str, repo_dir: RepoDir = None) -> None:
     _output(library.list_comments(identifier, directory=_directory(repo_dir)))
 
 
-@app.command("comment")
+class _CommentGroup(TyperGroup):
+    """Keep the original append syntax while exposing real nested commands."""
+
+    def parse_args(self, ctx: ClickContext, args: list[str]) -> list[str]:
+        # Route the old target/text invocation through the same typed add
+        # command, retaining option parsing and strict argument-count checks.
+        # Help stays on the group; explicit add disambiguates action-like IDs.
+        if args and args[0] not in {"add", "update", "delete", "--help"}:
+            args = ["add", *args]
+        return super().parse_args(ctx, args)
+
+
+comment_app = typer.Typer(
+    cls=_CommentGroup,
+    no_args_is_help=True,
+    help=(
+        "Add, update or delete comments. Shorthand: gc comment PR_ID TEXT. "
+        "--repo-dir selects a repo."
+    ),
+)
+app.add_typer(comment_app, name="comment")
+
+
+@comment_app.command("add")
 def comment_command(target: str, comment: str, repo_dir: RepoDir = None) -> None:
     """Append quoted COMMENT to PR[:COMMENT_ID...]; @- reads stdin."""
     import asyncio
@@ -171,13 +196,13 @@ def comment_command(target: str, comment: str, repo_dir: RepoDir = None) -> None
     )
 
 
-@app.command("update-comment")
+@comment_app.command("update")
 def update_comment_command(target: str, text: str, repo_dir: RepoDir = None) -> None:
     """Replace PR_ID:COMMENT_ID text. Quote TEXT; @- reads stdin; empty text clears."""
     _output(library.update_comment(target, _text(text), directory=_directory(repo_dir)))
 
 
-@app.command("delete-comment")
+@comment_app.command("delete")
 def delete_comment_command(target: str, repo_dir: RepoDir = None) -> None:
     """Delete PR_ID:COMMENT_ID and its reply links. Main must be cleared instead."""
     _output(library.delete_comment(target, directory=_directory(repo_dir)))

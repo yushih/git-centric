@@ -513,7 +513,7 @@ def test_comment_edit_cli_and_errors(ready: Path, monkeypatch) -> None:
     target = f"{item.id}:{comment.id}"
     monkeypatch.chdir(ready)
     runner = CliRunner()
-    result = runner.invoke(app, ["update-comment", target, "@-"], input="new\n\n")
+    result = runner.invoke(app, ["comment", "update", target, "@-"], input="new\n\n")
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["text"] == "new\n\n"
     before = git(ready, "rev-parse", GC_REF)
@@ -525,17 +525,23 @@ def test_comment_edit_cli_and_errors(ready: Path, monkeypatch) -> None:
         assert update_comment(missing, "x").reason == FailureReason.NOT_FOUND
         assert delete_comment(missing).reason == FailureReason.NOT_FOUND
     for args in (
-        ["delete-comment", target, "extra"],
-        ["update-comment", target],
-        ["update-comment", target, "text", "extra"],
+        ["comment", "delete", target, "extra"],
+        ["comment", "update", target],
+        ["comment", "update", target, "text", "extra"],
     ):
         assert runner.invoke(app, args).exit_code == 2
-    assert runner.invoke(app, ["delete-comment", item.id + ":main"]).exit_code == 1
+    assert runner.invoke(app, ["comment", "delete", item.id + ":main"]).exit_code == 1
     assert git(ready, "rev-parse", GC_REF) == before
-    assert runner.invoke(app, ["delete-comment", target]).exit_code == 0
-    for command in ("delete-comment", "update-comment"):
-        assert command in runner.invoke(app, ["help"]).stdout
-        assert "PR_ID:COMMENT_ID" in runner.invoke(app, [command, "--help"]).stdout
+    assert runner.invoke(app, ["comment", "delete", target]).exit_code == 0
+    for command in ("delete", "update"):
+        assert command in runner.invoke(app, ["comment", "--help"]).stdout
+        assert "PR_ID:COMMENT_ID" in runner.invoke(app, ["comment", command, "--help"]).stdout
+    # The rename removes old top-level commands rather than retaining aliases.
+    for command in ("delete-comment", "update-comment", "delete_comment", "update_comment"):
+        assert runner.invoke(app, [command, target]).exit_code == 2
+        assert command not in runner.invoke(app, ["help"]).stdout
+    # Explicit add and its original shorthand share the same append operation.
+    assert runner.invoke(app, ["comment", "add", item.id, "another"]).exit_code == 0
 
 
 @pytest.mark.parametrize("delete", [False, True])

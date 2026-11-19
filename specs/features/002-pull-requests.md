@@ -7,7 +7,7 @@ State: verified
 This feature supersedes the pull-request non-goal in the architecture baseline.
 
 Implement the root README's PR library and CLI, without RPC, UI, merging,
-comment editing, remote refs, or gossip. All operations use Result values and
+remote refs, or gossip. All operations use Result values and
 require initialized metadata. Expose async create_pull_request and add_comment;
 list_pull_requests, update_pull_request, and list_comments are synchronous.
 An async generate_id(kind) returns a random UUID string for pull_request/comment.
@@ -36,7 +36,7 @@ An async generate_id(kind) returns a random UUID string for pull_request/comment
 - PR-007: Preserve HEAD, index, working files, unrelated metadata and history.
   Build trees directly and publish one-parent commits with compare-and-swap;
   concurrent publication fails without overwriting the winner. Reject malformed
-  metadata and generated ID collisions. Never edit existing comments.
+  metadata and generated ID collisions. Comment updates/deletions use the explicit operations below.
 
 Failures: existing repository/Git/IO/unexpected reasons plus invalid_argument,
 not_initialized, branch_not_found, not_found, invalid_metadata, id_conflict.
@@ -86,3 +86,14 @@ All eight draft/closed/merged combinations are supported. Writers order flags
 duplicates. Public JSON replaces status with three booleans. Merged is derived
 for create/update/list irrespective of draft/closed. The open filter remains
 !draft && !closed && !merged. See [state change](../changes/2026-11-19-independent-pr-states.md).
+
+Comment editing and deletion follow [EDIT-001–004](../changes/2026-11-19-edit-comments.md):
+`gc comment update PR_ID:COMMENT_ID TEXT` and `gc comment delete PR_ID:COMMENT_ID`.
+Both have synchronous public library equivalents. Main may be cleared but not
+deleted; deleting another comment removes incoming reply links without deleting replies.
+
+All commands support `--repo-dir`, defaulting to cwd, with override warnings as
+specified by [DIR](../changes/2026-11-19-repo-directory.md).
+
+Nested command routing and backward-compatible append shorthand follow the
+[comment subcommands change](../changes/2026-11-19-comment-subcommands.md).

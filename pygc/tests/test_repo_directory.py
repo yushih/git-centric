@@ -47,9 +47,9 @@ def test_all_repo_commands_use_override(pair, monkeypatch) -> None:
     assert invoke(["pr", "update", item["id"], "title=Changed"])["title"] == "Changed"
     comment = invoke(["comment", item["id"], "Body"])
     target = item["id"] + ":" + comment["id"]
-    assert invoke(["update-comment", target, "Updated"])["text"] == "Updated"
+    assert invoke(["comment", "update", target, "Updated"])["text"] == "Updated"
     assert len(invoke(["pr", "comments", item["id"]])) == 2
-    assert invoke(["delete-comment", target])["id"] == comment["id"]
+    assert invoke(["comment", "delete", target])["id"] == comment["id"]
     assert len(invoke(["pr", "comments", item["id"]])) == 1
     # No option still means cwd, without a warning or accidental sticky selection.
     result = runner.invoke(app, ["pr", "list"])
@@ -145,8 +145,8 @@ def test_non_repo_commands_and_help(pair, monkeypatch) -> None:
         ["pr", "update"],
         ["pr", "comments"],
         ["comment"],
-        ["update-comment"],
-        ["delete-comment"],
+        ["comment", "update"],
+        ["comment", "delete"],
     ):
         result = runner.invoke(app, [*args, "--help"])
         assert result.exit_code == 0 and "--repo-dir" in result.stdout

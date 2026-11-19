@@ -64,7 +64,7 @@ gc init --help       # describes the optional directory argument
 
 Every command accepts `--repo-dir=PATH` (or `--repo-dir PATH`) after the command,
 for example `gc pr list --repo-dir=/path/to/repo` and
-`gc update-comment PR_ID:COMMENT_ID "Text" --repo-dir=/path/to/repo`.
+`gc comment update PR_ID:COMMENT_ID "Text" --repo-dir=/path/to/repo`.
 Without it, repository operations use the current directory. If both the current
 and selected directories are Git-centric initialized repositories and differ,
 a warning is printed to stderr; the explicit option wins. Subdirectories,
@@ -130,12 +130,17 @@ gc pr update PR_ID close draft  # independent states can be combined
 gc pr update PR_ID reopen       # preserves draft state
 gc pr comments PR_ID
 gc comment PR_ID "Another comment"
+gc comment add PR_ID "Another comment"  # explicit form
 gc comment PR_ID:main "Reply to the description"
 gc comment PR_ID:COMMENT_ID @-
-gc update-comment PR_ID:COMMENT_ID "Revised text"
-gc update-comment PR_ID:main @-
-gc delete-comment PR_ID:COMMENT_ID
+gc comment update PR_ID:COMMENT_ID "Revised text"
+gc comment update PR_ID:main @-
+gc comment delete PR_ID:COMMENT_ID
 ```
+
+The `comment` group provides `add`, `update`, and `delete`; `gc comment PR_ID TEXT`
+is shorthand for `gc comment add PR_ID TEXT`. Use explicit `add` if a target ID
+is one of those action words. `gc comment --help` lists the actions.
 
 Commands emit JSON records (lists for `list` and `comments`), preserving multiline
 text. List filters combine with AND: `open`, `mine`, `author=NAME_OR_EMAIL`,
@@ -180,7 +185,7 @@ Use `update_comment(target, text, directory=".")` to replace text and
 APIs return the updated or removed `Comment`. Targets require exactly
 `PR_ID:COMMENT_ID`. Identical updates do not create commits. Deletion preserves
 replies and their text, removing links to the deleted ID. The required `main`
-description cannot be deleted; clear it with `gc update-comment PR_ID:main ""`.
+description cannot be deleted; clear it with `gc comment update PR_ID:main ""`.
 Any local author can edit/delete comments; prior contents remain in Git history. Malformed stored comment filenames or
 non-UTF-8 bodies return `invalid_metadata`; invalid caller-supplied IDs return
 `invalid_argument`. Git history supplies PR creator and creation
