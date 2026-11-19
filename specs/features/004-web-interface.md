@@ -1,6 +1,6 @@
 # Repository web interface
 
-State: session 1 implemented. See the [session 1 record](../changes/2026-11-20-web-context.md). This document is the implementation backlog. Each row in the delivery table can be picked up in a fresh session.
+State: implemented. See the [release verification record](../changes/2026-11-20-forge-ui.md) and [initial repository context record](../changes/2026-11-20-web-context.md).
 
 ## Product and information architecture
 
@@ -65,3 +65,35 @@ Run Ruff, mypy and affected pytest suites for Python changes, npm test and npm r
 
 Landing contract revision: show source branches, commits and files only on Code.
 Omit repository type, reserved branch, metadata commit and initialization status.
+
+The collaboration tabs own the explicit setup action. Detail responses include
+metadata_tip. Update and scoped comment requests require expectedTip. Use
+issues/pulls.show({id}), .create, .update, and .comments.add/update/delete.
+Commit detail and PR patch previews are limited to 1 MiB. A changed comparison
+requires a refresh. Preserve the existing code.browse wire contract.
+
+## Shipped RPC and routing details
+
+The existing aggregate `code.browse` method also accepts `detail: true` for
+first-parent commit details. An empty path returns the combined patch and a
+changed path selects its patch, including the old path for renames. History
+uses pages of 50 and an offset within the pinned revision.
+
+Both collaboration namespaces accept these named parameters.
+
+| Method | Parameters | Result |
+| --- | --- | --- |
+| list | Optional state, title substring, author name/email/identity | Records with creation identity and state flags. Default RPC state is all, default UI state is open. |
+| show | id | Entity, comments and metadata_tip. PR detail also contains comparison tips, merge_base, conflicts and changed files. |
+| create | title, optional description, plus base and compare for PRs | Created entity |
+| update | id, expectedTip, optional title and state (close/reopen), plus optional PR base, compare and readiness (draft/ready) | Updated entity |
+| comments.add | id, expectedTip, text, repliesTo (array of comment IDs) | Created comment |
+| comments.update | id, expectedTip, comment, text | Updated comment |
+| comments.delete | id, expectedTip, comment | Deleted comment |
+
+`repo.initialize({})` returns the initialization commit.
+`pulls.patch({id, baseTip, compareTip, path})` returns patch text or a size
+notice. File links carry the comparison tips so selecting a file after a
+branch moves prompts a refresh. Comparisons and patch previews use immutable
+commits. Mutations require a loopback peer and Host, with same-origin browser
+requests and the specified loopback Vite origins accepted.

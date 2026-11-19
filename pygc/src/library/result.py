@@ -16,6 +16,7 @@ class FailureReason(StrEnum):
     BRANCH_NOT_FOUND = "branch_not_found"
     NOT_FOUND = "not_found"
     INVALID_METADATA = "invalid_metadata"
+    STALE_SNAPSHOT = "stale_snapshot"
     ID_CONFLICT = "id_conflict"
     NOT_A_REPOSITORY = "not_a_repository"
     ALREADY_INITIALIZED = "already_initialized"

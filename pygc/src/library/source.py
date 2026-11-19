@@ -1,6 +1,7 @@
 """Browse committed objects through local branch names, never worktree paths."""
 
 import re
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,7 @@ from git import Repo
 
 from .constants import GC_BRANCH
 from .initialization import _failure
+from .patches import changed_files, patch
 from .result import Failure, FailureReason, Result, Success
 
 
@@ -18,6 +20,7 @@ def browse_source(
     revision: str | None = None,
     history: bool = False,
     offset: int = 0,
+    detail: bool = False,
 ) -> Result[dict[str, Any]]:
     """Read directory, file or history from a single captured source revision."""
     if (
@@ -72,6 +75,23 @@ def browse_source(
                 )
 
             data["commit"] = summary(tip)
+            if detail:
+                parents = [c.hexsha for c in tip.parents]
+                revisions = parents[:1] + [tip.hexsha]
+                changes = changed_files(repo, revisions)
+                paths = []
+                if path:
+                    change = next((f for f in changes if f.path == path), None)
+                    if change is None:
+                        return Failure(FailureReason.NOT_FOUND, "Unknown changed path")
+                    paths = ([change.old_path] if change.old_path else []) + [path]
+                data.update(
+                    changes=[asdict(change) for change in changes],
+                    body=tip.message,
+                    parents=parents,
+                    patch=patch(repo, revisions, paths),
+                )
+                return Success(data)
             if history:
                 page = list(repo.iter_commits(tip.hexsha, max_count=51, skip=offset))
                 data.update(commits=[summary(c) for c in page[:50]], more=len(page) > 50)

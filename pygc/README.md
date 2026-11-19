@@ -1,8 +1,7 @@
 # pygc
 
-Python skeleton for Git-centric: a reusable library, a `gc` CLI, and a React SPA
-displaying repository context over JSON-RPC 2.0 through FastAPI. GitPython-backed
-repository initialization and pull requests are available through Python and the CLI.
+Git-centric provides a Python library, a CLI, and a local web interface for
+browsing source and managing Git-backed issues and pull requests.
 
 ## Requirements and setup
 
@@ -22,6 +21,10 @@ uv run gc web
 ```
 
 Open http://127.0.0.1:8000. `gc web` serves both the built frontend and `/api/rpc`.
+Use `gc web --repo-dir PATH` to select a repository. Browse commit patches from
+History. Open Issues or Pull requests to initialize collaboration, edit records,
+and reply to comments. Files changed shows the compare-side changes and conflicts.
+If another writer changes metadata, reload the conversation and review your draft.
 Use `uv run gc web --host 127.0.0.1 --port 9000` to change the binding.
 The server defaults to localhost; authentication and remote deployment are outside
 this skeleton's scope.

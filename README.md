@@ -237,4 +237,5 @@ gc web --reload  # reload the server during development
 the frontend using the [setup instructions](pygc/README.md#requirements-and-setup)
 first. The Code tab shows the selected branch, latest commit, and committed files.
 Use the breadcrumbs to browse directories or History to inspect earlier revisions.
-Issues and Pull requests open read-only lists. Use the CLI for edits.
+Issues and Pull requests support creation, editing, and threaded conversations.
+Open Files changed on a pull request to review patches and merge conflicts.

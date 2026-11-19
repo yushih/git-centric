@@ -51,6 +51,7 @@ class Issue:
 class IssueDetails:
     issue: Issue
     comments: tuple[Comment, ...]
+    metadata_tip: str = ""
 
 
 def _name(issue: Issue) -> str:
@@ -140,12 +141,18 @@ class _Store:
         return created
 
 
-def _run[T](directory: str | Path, operation: Callable[[_Store], T]) -> Result[T]:
+def _run[T](
+    directory: str | Path, operation: Callable[[_Store], T], expected_tip: str | None = None
+) -> Result[T]:
     try:
         with Repo(
             Path(directory).absolute(), search_parent_directories=True, expand_vars=False
         ) as repo:
-            return Success(operation(_Store(repo)))
+            store = _Store(repo)
+            # Validate against the same snapshot used by the existing CAS writer.
+            if expected_tip is not None and expected_tip != store.oid:
+                return Failure(FailureReason.STALE_SNAPSHOT, "Reload the changed conversation")
+            return Success(operation(store))
     except _Problem as exc:
         return Failure(exc.reason, str(exc))
     except Exception as exc:
@@ -178,7 +185,11 @@ async def create_issue(title: str, comment: str = "", directory: str | Path = ".
 
 
 def update_issue(
-    identifier: str, updates: Sequence[str], directory: str | Path = "."
+    identifier: str,
+    updates: Sequence[str],
+    directory: str | Path = ".",
+    *,
+    expected_tip: str | None = None,
 ) -> Result[Issue]:
     """Apply all validated changes atomically; no-op updates retain the ref."""
 
@@ -209,7 +220,7 @@ def update_issue(
             store.publish("; ".join(actions))
         return issue
 
-    return _run(directory, update)
+    return _run(directory, update, expected_tip)
 
 
 def list_issues(filters: Sequence[str] = (), directory: str | Path = ".") -> Result[list[Issue]]:
@@ -258,7 +269,7 @@ def show_issue(identifier: str, directory: str | Path = ".") -> Result[IssueDeta
         name, issue = store.get(identifier)
         author, date = store.origins()[identifier]
         return IssueDetails(
-            replace(issue, author=author, created_at=date), tuple(store.comments(name))
+            replace(issue, author=author, created_at=date), tuple(store.comments(name)), store.oid
         )
 
     return _run(directory, show)
@@ -268,7 +279,9 @@ def list_issue_comments(identifier: str, directory: str | Path = ".") -> Result[
     return _run(directory, lambda store: store.comments(store.get(identifier)[0]))
 
 
-async def add_issue_comment(target: str, text: str, directory: str | Path = ".") -> Result[Comment]:
+async def add_issue_comment(
+    target: str, text: str, directory: str | Path = ".", *, expected_tip: str | None = None
+) -> Result[Comment]:
     """Append a root comment or reply to existing comments within one issue."""
     try:
         identifier = await generate_id("comment")
@@ -285,10 +298,12 @@ async def add_issue_comment(target: str, text: str, directory: str | Path = ".")
         store.publish(f"add comment {identifier} on issue {issue_id}{detail}")
         return result
 
-    return _run(directory, add)
+    return _run(directory, add, expected_tip)
 
 
-def _edit(target: str, text: str | None, directory: str | Path) -> Result[Comment]:
+def _edit(
+    target: str, text: str | None, directory: str | Path, *, expected_tip: str | None = None
+) -> Result[Comment]:
     def edit(store: _Store) -> Comment:
         parts = target.split(ISSUE_TITLE_SEPARATOR)
         if len(parts) != 2:
@@ -313,12 +328,16 @@ def _edit(target: str, text: str | None, directory: str | Path) -> Result[Commen
             store.publish(f"{action} on issue {issue_id}{detail}")
         return result
 
-    return _run(directory, edit)
+    return _run(directory, edit, expected_tip)
 
 
-def update_issue_comment(target: str, text: str, directory: str | Path = ".") -> Result[Comment]:
-    return _edit(target, text, directory)
+def update_issue_comment(
+    target: str, text: str, directory: str | Path = ".", *, expected_tip: str | None = None
+) -> Result[Comment]:
+    return _edit(target, text, directory, expected_tip=expected_tip)
 
 
-def delete_issue_comment(target: str, directory: str | Path = ".") -> Result[Comment]:
-    return _edit(target, None, directory)
+def delete_issue_comment(
+    target: str, directory: str | Path = ".", *, expected_tip: str | None = None
+) -> Result[Comment]:
+    return _edit(target, None, directory, expected_tip=expected_tip)

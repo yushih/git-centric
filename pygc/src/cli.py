@@ -119,6 +119,13 @@ def _output(result: library.Result[object]) -> None:
         case library.Success(value):
 
             def record(item: object) -> object:
+                # Browser preconditions are transport fields outside the CLI output contract.
+                if isinstance(item, (library.IssueDetails, library.PullRequestDetails)):
+                    return {
+                        k: v
+                        for k, v in asdict(item).items()
+                        if k not in {"metadata_tip", "base_tip", "compare_tip", "merge_base"}
+                    }
                 return asdict(item) if is_dataclass(item) and not isinstance(item, type) else item
 
             typer.echo(

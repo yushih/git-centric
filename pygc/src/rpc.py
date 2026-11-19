@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import ConfigDict, ValidationError, validate_call
 
 from . import library
+from .collaboration_rpc import collaboration_methods
 from .library.source import browse_source
 
 logger = logging.getLogger(__name__)
@@ -35,26 +36,16 @@ def repository_methods(directory: Path) -> dict[str, Callable[..., Any]]:
         revision: str | None = None,
         history: bool = False,
         offset: int = 0,
+        detail: bool = False,
     ) -> Any:
-        result = browse_source(directory, branch, path, revision, history, offset)
+        result = browse_source(directory, branch, path, revision, history, offset, detail)
         return result.value if isinstance(result, library.Success) else result
-
-    def listing(pulls: bool) -> Any:
-        result = (
-            library.list_pull_requests(directory=directory)
-            if pulls
-            else library.list_issues(directory=directory)
-        )
-        if isinstance(result, library.Failure):
-            return [] if result.reason == library.FailureReason.NOT_INITIALIZED else result
-        return [dict(id=item.id, title=item.title, closed=item.closed) for item in result.value]
 
     return {
         **METHODS,
+        **collaboration_methods(directory),
         "repo.get": context,
         "code.browse": source,
-        "issues.list": validate_call(lambda: listing(False)),
-        "pulls.list": validate_call(lambda: listing(True)),
     }
 
 

@@ -43,6 +43,8 @@ from .metadata import (
     prepare_commit,
     publish_commit,
 )
+from .patches import FileChange as FileChange
+from .patches import changed_files, patch
 from .result import Failure, FailureReason, Result, Success
 
 
@@ -60,14 +62,6 @@ class PullRequest:
 
 
 @dataclass(frozen=True)
-class FileChange:
-    status: str
-    path: str
-    old_path: str | None = None
-    similarity: int | None = None
-
-
-@dataclass(frozen=True)
 class PullRequestDetails:
     pull_request: PullRequest
     comments: tuple[Comment, ...]
@@ -75,6 +69,10 @@ class PullRequestDetails:
     changed_files: tuple[FileChange, ...] | None
     conflicting_files: tuple[str, ...] | None
     merge_analysis_error: str | None
+    metadata_tip: str = ""
+    base_tip: str | None = None
+    compare_tip: str | None = None
+    merge_base: str | None = None
 
 
 def _name(pr: PullRequest) -> str:
@@ -145,12 +143,18 @@ class _Store:
         publish_commit(self.repo, commit, self.oid, _git)
 
 
-def _run[T](directory: str | Path, operation: Callable[[_Store], T]) -> Result[T]:
+def _run[T](
+    directory: str | Path, operation: Callable[[_Store], T], expected_tip: str | None = None
+) -> Result[T]:
     try:
         with Repo(
             Path(directory).absolute(), search_parent_directories=True, expand_vars=False
         ) as repo:
-            return Success(operation(_Store(repo)))
+            store = _Store(repo)
+            # Validate against the same snapshot used by the existing CAS writer.
+            if expected_tip is not None and expected_tip != store.oid:
+                return Failure(FailureReason.STALE_SNAPSHOT, "Reload the changed conversation")
+            return Success(operation(store))
     except _Problem as exc:
         return Failure(exc.reason, str(exc))
     except Exception as exc:
@@ -239,7 +243,11 @@ def _pr_update_message(before: PullRequest, after: PullRequest) -> str:
 
 
 def update_pull_request(
-    identifier: str, updates: Sequence[str], directory: str | Path = "."
+    identifier: str,
+    updates: Sequence[str],
+    directory: str | Path = ".",
+    *,
+    expected_tip: str | None = None,
 ) -> Result[PullRequest]:
     """Rename metadata atomically, retaining all comments and stable identity."""
 
@@ -284,7 +292,7 @@ def update_pull_request(
             store.publish(_pr_update_message(before, pr))
         return pr
 
-    return _run(directory, update)
+    return _run(directory, update, expected_tip)
 
 
 def list_pull_requests(
@@ -348,51 +356,23 @@ def list_comments(identifier: str, directory: str | Path = ".") -> Result[list[C
 
 def _merge_analysis(
     repo: Repo, pr: PullRequest, branches: dict[str, str]
-) -> tuple[bool | None, tuple[str, ...] | None, tuple[FileChange, ...] | None, str | None]:
+) -> tuple[
+    bool | None, tuple[str, ...] | None, tuple[FileChange, ...] | None, str | None, str | None
+]:
     """Analyze captured tips using plumbing, never the caller's checkout/index."""
     missing = [name for name in dict.fromkeys((pr.compare, pr.base)) if name not in branches]
     if missing:
-        return None, None, None, f"Missing branches: {', '.join(missing)}"
+        return None, None, None, None, f"Missing branches: {', '.join(missing)}"
     base, compare = branches[pr.base], branches[pr.compare]
     try:
         ancestor = _git(repo, "merge-base", base, compare)
     except GitCommandError as exc:
         if exc.status == 1:
-            return None, None, None, "Branches have unrelated histories"
+            return None, None, None, None, "Branches have unrelated histories"
         raise
     # Use the feature-side diff rather than tip-to-tip: base-only work is not
     # part of this PR. NUL separation avoids Git's filename quoting convention.
-    output = _git(
-        repo,
-        "diff",
-        "--name-status",
-        "--find-renames",
-        "--find-copies",
-        "--find-copies-harder",
-        "-z",
-        ancestor,
-        compare,
-        "--",
-    )
-    fields = iter(output.split("\0")[:-1])
-    changes = []
-    kinds = {
-        "A": "added",
-        "M": "modified",
-        "D": "deleted",
-        "R": "renamed",
-        "C": "copied",
-        "T": "type_changed",
-        "U": "unmerged",
-        "X": "unknown",
-        "B": "broken",
-    }
-    for status in fields:
-        path = next(fields)
-        if status[0] in {"R", "C"}:
-            changes.append(FileChange(kinds[status[0]], next(fields), path, int(status[1:])))
-        else:
-            changes.append(FileChange(kinds.get(status[0], "unknown"), path))
+    changes = changed_files(repo, [ancestor, compare])
     # The first NUL-delimited field is the resulting tree OID. Remaining fields
     # are conflicted paths; --no-messages excludes human-readable diagnostics.
     # Exit 1 is expected for conflicts, while other errors remain Git failures.
@@ -407,7 +387,7 @@ def _merge_analysis(
         compare,
     )
     conflicts = tuple(sorted(set(path for path in merge.split("\0")[1:] if path)))
-    return merge_status == 1, conflicts, tuple(changes), None
+    return merge_status == 1, conflicts, tuple(changes), ancestor, None
 
 
 def show_pull_request(identifier: str, directory: str | Path = ".") -> Result[PullRequestDetails]:
@@ -437,7 +417,7 @@ def show_pull_request(identifier: str, directory: str | Path = ".") -> Result[Pu
             created_at=created_at,
             merged=_merged(store.repo, pr, branches),
         )
-        has_conflicts, conflicts, files, error = _merge_analysis(store.repo, pr, branches)
+        has_conflicts, conflicts, files, ancestor, error = _merge_analysis(store.repo, pr, branches)
         return PullRequestDetails(
             pr,
             tuple(comments),
@@ -445,12 +425,18 @@ def show_pull_request(identifier: str, directory: str | Path = ".") -> Result[Pu
             files,
             conflicts,
             error,
+            store.oid,
+            branches.get(pr.base),
+            branches.get(pr.compare),
+            ancestor,
         )
 
     return _run(directory, show)
 
 
-async def add_comment(target: str, text: str, directory: str | Path = ".") -> Result[Comment]:
+async def add_comment(
+    target: str, text: str, directory: str | Path = ".", *, expected_tip: str | None = None
+) -> Result[Comment]:
     """Append a comment; target is a PR ID optionally followed by :reply IDs."""
     try:
         identifier = await generate_id("comment")
@@ -477,14 +463,16 @@ async def add_comment(target: str, text: str, directory: str | Path = ".") -> Re
         store.publish(f"add comment {identifier} on pr {pr_id}{reply_detail}")
         return Comment(identifier, text, tuple(replies))
 
-    return _run(directory, add)
+    return _run(directory, add, expected_tip)
 
 
 def _comment_filename(comment: Comment) -> str:
     return COMMENT_PREFIX + PR_TITLE_SEPARATOR.join([comment.id, *comment.replies_to])
 
 
-def _edit_comment(target: str, text: str | None, directory: str | Path) -> Result[Comment]:
+def _edit_comment(
+    target: str, text: str | None, directory: str | Path, *, expected_tip: str | None = None
+) -> Result[Comment]:
     # None denotes deletion; empty text remains a valid replacement, including
     # for main. Validate the whole conversation before preparing any mutation.
     def edit(store: _Store) -> Comment:
@@ -527,14 +515,39 @@ def _edit_comment(target: str, text: str | None, directory: str | Path) -> Resul
         store.publish(f"{action} on pr {pr_id}")
         return result
 
-    return _run(directory, edit)
+    return _run(directory, edit, expected_tip)
 
 
-def update_comment(target: str, text: str, directory: str | Path = ".") -> Result[Comment]:
+def update_comment(
+    target: str, text: str, directory: str | Path = ".", *, expected_tip: str | None = None
+) -> Result[Comment]:
     """Replace PR_ID:COMMENT_ID text, preserving identity and reply links."""
-    return _edit_comment(target, text, directory)
+    return _edit_comment(target, text, directory, expected_tip=expected_tip)
 
 
-def delete_comment(target: str, directory: str | Path = ".") -> Result[Comment]:
+def delete_comment(
+    target: str, directory: str | Path = ".", *, expected_tip: str | None = None
+) -> Result[Comment]:
     """Remove a non-main comment and incoming reply links; return the removed record."""
-    return _edit_comment(target, None, directory)
+    return _edit_comment(target, None, directory, expected_tip=expected_tip)
+
+
+def read_pr_diff(
+    identifier: str, base_tip: str, compare_tip: str, path: str, directory: str | Path = "."
+) -> Result[str]:
+    """Pin the selected path to the same comparison displayed in Files changed."""
+    detail = show_pull_request(identifier, directory)
+    if isinstance(detail, Failure):
+        return detail
+    pr = detail.value
+    if (base_tip, compare_tip) != (pr.base_tip, pr.compare_tip):
+        return Failure(FailureReason.STALE_SNAPSHOT, "Comparison changed")
+    change = next((f for f in pr.changed_files or () if f.path == path), None)
+    if change is None or pr.merge_base is None:
+        return Failure(FailureReason.NOT_FOUND, "Unknown changed file")
+    try:
+        with Repo(directory, search_parent_directories=True, expand_vars=False) as repo:
+            paths = ([change.old_path] if change.old_path else []) + [path]
+            return Success(patch(repo, [pr.merge_base, compare_tip], paths))
+    except Exception as exc:
+        return _failure(exc)

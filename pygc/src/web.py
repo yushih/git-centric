@@ -25,6 +25,42 @@ def create_app(static_dir: Path | None = None, *, directory: Path | None = None)
             payload = await request.json()
         except (json.JSONDecodeError, UnicodeDecodeError):
             return JSONResponse(error(-32700, "Parse error"))
+        requests = payload if isinstance(payload, list) else [payload]
+        read_methods = {
+            "repo.get",
+            "code.browse",
+            "greet",
+            "issues.list",
+            "issues.show",
+            "pulls.list",
+            "pulls.show",
+            "pulls.patch",
+        }
+        if any(
+            isinstance(item, dict)
+            and isinstance(item.get("method"), str)
+            and item["method"] in methods
+            and item["method"] not in read_methods
+            for item in requests
+        ):
+            # Verify the peer as well as Host to protect non-loopback launches and DNS rebinding.
+            local = {"localhost", "127.0.0.1", "::1"}
+            origin = request.headers.get("origin")
+            if (
+                request.client is None
+                or request.client.host not in local
+                or request.url.hostname not in local
+                or (
+                    origin
+                    and origin
+                    not in {
+                        f"{request.url.scheme}://{request.url.netloc}",
+                        "http://localhost:5173",
+                        "http://127.0.0.1:5173",
+                    }
+                )
+            ):
+                return JSONResponse({"detail": "Local access required"}, status_code=403)
         result = await run_in_threadpool(handle, payload, methods)
         return Response(status_code=204) if result is None else JSONResponse(result)
 
