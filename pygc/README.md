@@ -129,6 +129,7 @@ gc pr update PR_ID compare=another-branch base=main
 gc pr update PR_ID close draft  # independent states can be combined
 gc pr update PR_ID reopen       # preserves draft state
 gc pr comments PR_ID
+gc pr comments --help  # also shown when called without a PR ID
 gc comment PR_ID "Another comment"
 gc comment add PR_ID "Another comment"  # explicit form
 gc comment PR_ID:main "Reply to the description"

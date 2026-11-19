@@ -570,3 +570,32 @@ def test_comment_edit_concurrent_publication(ready: Path, delete: bool) -> None:
     assert (
         next(c for c in list_comments(item.id, ready).value if c.id == comment.id).text == "winner"
     )
+
+
+@pytest.mark.parametrize("arguments,exit_code", [([], 2), (["--help"], 0)])
+def test_pr_comments_help_without_repository(
+    tmp_path: Path, monkeypatch, arguments, exit_code
+) -> None:
+    # Both help paths describe the listing command completely, even outside Git,
+    # and must never attempt repository discovery or comment loading.
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("pygc.cli.library.list_comments") as listing,
+        patch("pygc.cli.library.is_gc_initialized") as initialized,
+    ):
+        result = CliRunner().invoke(app, ["pr", "comments", *arguments])
+    assert result.exit_code == exit_code, result.output
+    normalized = " ".join(result.output.split())
+    for expected in (
+        "pr comments [OPTIONS] {PR_ID}",
+        "JSON",
+        "text and reply IDs",
+        "Pull request ID",
+        "--repo-dir",
+        "current directory",
+        "Example:",
+    ):
+        assert expected in normalized
+    assert "Missing argument" not in result.output
+    listing.assert_not_called()
+    initialized.assert_not_called()

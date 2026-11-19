@@ -157,9 +157,19 @@ def pr_update(
     _output(library.update_pull_request(identifier, updates, directory=_directory(repo_dir)))
 
 
-@pr_app.command("comments")
-def pr_comments(identifier: str, repo_dir: RepoDir = None) -> None:
-    """Show a pull request's comments and reply IDs."""
+@pr_app.command("comments", no_args_is_help=True)
+def pr_comments(
+    identifier: Annotated[
+        str, typer.Argument(metavar="PR_ID", help="Pull request ID to list comments for.")
+    ],
+    repo_dir: RepoDir = None,
+) -> None:
+    """List a pull request's comments as JSON, including text and reply IDs.
+
+    Example: gc pr comments PR_ID --repo-dir=/path/to/repo
+
+    The repository defaults to the current directory.
+    """
     _output(library.list_comments(identifier, directory=_directory(repo_dir)))
 
 

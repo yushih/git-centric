@@ -23,7 +23,8 @@ An async generate_id(kind) returns a random UUID string for pull_request/comment
   actions within one axis; allow combined actions across axes.
   ready removes draft only; reopen removes closed only. Update results
   include the original author and creation timestamp, including no-op updates.
-- PR-004: `gc pr comments id` lists comments; `gc comment pr[:reply-id...] text`
+- PR-004: `gc pr comments id` lists comments; no arguments displays full command
+  help (exit 2), and `--help` displays help (exit 0), without opening a repository; `gc comment pr[:reply-id...] text`
   appends a comment addressing existing comments. @- reads stdin verbatim.
   Malformed stored comment IDs and non-UTF-8 text return invalid_metadata.
   Fixed argument counts reject extra words; variable arguments reject unknown tokens.
