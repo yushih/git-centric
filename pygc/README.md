@@ -191,6 +191,9 @@ Any local author can edit/delete comments; prior contents remain in Git history.
 non-UTF-8 bodies return `invalid_metadata`; invalid caller-supplied IDs return
 `invalid_argument`. Git history supplies PR creator and creation
 time, tracked by stable ID through directory renames along first-parent history.
+Metadata commit messages name the action and target, for example `close pr ID`
+or `update comment CID text on pr PID`. Combined PR updates describe each actual
+change; unchanged fields are omitted. Existing history is not rewritten.
 Writes preserve the checkout and index and atomically append to metadata history;
 a concurrent update fails instead of overwriting it. Failed writes may leave
 unreachable Git objects. Retrying a failed write requires a fresh operation.

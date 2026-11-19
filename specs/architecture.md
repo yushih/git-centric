@@ -89,3 +89,11 @@ from the RPC allowlist; adding an export must not automatically expose it remote
 
 These are test locations, not a claim that the tests were executed for a given
 change. Record execution evidence in that change's verification notes.
+
+## Commit message rule
+
+All generated Git commits must describe the concrete action and identify the
+affected entity. PR updates enumerate actual state/field changes, not a generic
+"update"; combined operations describe every change and omit unchanged values.
+Keep subjects on one line by escaping free text. No-op operations create no
+commit. See [message contract](changes/2026-11-19-descriptive-commit-messages.md).

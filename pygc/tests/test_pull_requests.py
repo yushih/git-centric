@@ -599,3 +599,69 @@ def test_pr_comments_help_without_repository(
     assert "Missing argument" not in result.output
     listing.assert_not_called()
     initialized.assert_not_called()
+
+
+def test_descriptive_pr_commit_messages(ready: Path) -> None:
+    # Inspect real commits for every stored PR transition. Redundant tokens
+    # must not claim changes, and multiline user text must remain one subject.
+    import json
+
+    assert git(ready, "show", "-s", "--format=%B", GC_REF) == "initialize Git-centric metadata"
+    title = 'Title café\n"quoted"'
+    item = asyncio.run(create_pull_request("feature/login", "main", title, directory=ready)).value
+    assert git(ready, "show", "-s", "--format=%B", GC_REF) == (
+        f"create pr {item.id}: {json.dumps(title, ensure_ascii=False)}"
+    )
+    for tokens, expected in (
+        (["close"], f"close pr {item.id}"),
+        (["reopen"], f"reopen pr {item.id}"),
+        (["draft"], f"mark pr {item.id} draft"),
+        (["ready"], f"mark pr {item.id} ready"),
+        (["title=New\n日本語"], f'set pr {item.id} title to "New\\n日本語"'),
+        (["compare=main"], f'set pr {item.id} compare to "main"'),
+        (["base=feature/login"], f'set pr {item.id} base to "feature/login"'),
+        # Input order does not affect canonical action ordering. All changed
+        # fields must be represented, rather than only the first update token.
+        (
+            ["base=main", "draft", "title=Combined", "compare=feature/login", "close"],
+            f'close pr {item.id}; mark pr {item.id} draft; set pr {item.id} title to "Combined"; '
+            f'set pr {item.id} compare to "feature/login"; set pr {item.id} base to "main"',
+        ),
+        (["close", "title=Combined", "ready"], f"mark pr {item.id} ready"),
+    ):
+        assert isinstance(update_pull_request(item.id, tokens, ready), Success)
+        assert git(ready, "show", "-s", "--format=%B", GC_REF) == expected
+    before = git(ready, "rev-parse", GC_REF)
+    assert isinstance(
+        update_pull_request(item.id, ["close", "ready", "title=Combined"], ready), Success
+    )
+    assert git(ready, "rev-parse", GC_REF) == before
+
+
+def test_descriptive_comment_commit_messages(ready: Path) -> None:
+    # Each comment write names its exact target; reply creation also lists all
+    # addressed IDs. Text bodies belong in blobs, not the log subject.
+    from pygc import delete_comment, update_comment
+
+    item = create(ready)
+    comment = asyncio.run(add_comment(item.id, "Original body", ready)).value
+    assert git(ready, "show", "-s", "--format=%B", GC_REF) == (
+        f"add comment {comment.id} on pr {item.id}"
+    )
+    reply = asyncio.run(add_comment(f"{item.id}:main:{comment.id}", "Reply body", ready)).value
+    assert git(ready, "show", "-s", "--format=%B", GC_REF) == (
+        f"add comment {reply.id} on pr {item.id} replying to main, {comment.id}"
+    )
+    for identifier in ("main", comment.id):
+        target = f"{item.id}:{identifier}"
+        assert isinstance(update_comment(target, "New body", ready), Success)
+        assert git(ready, "show", "-s", "--format=%B", GC_REF) == (
+            f"update comment {identifier} text on pr {item.id}"
+        )
+        before = git(ready, "rev-parse", GC_REF)
+        assert isinstance(update_comment(target, "New body", ready), Success)
+        assert git(ready, "rev-parse", GC_REF) == before
+    assert isinstance(delete_comment(f"{item.id}:{comment.id}", ready), Success)
+    assert git(ready, "show", "-s", "--format=%B", GC_REF) == (
+        f"delete comment {comment.id} on pr {item.id}"
+    )

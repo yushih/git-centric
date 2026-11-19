@@ -98,3 +98,5 @@ specified by [DIR](../changes/2026-11-19-repo-directory.md).
 
 Nested command routing and backward-compatible append shorthand follow the
 [comment subcommands change](../changes/2026-11-19-comment-subcommands.md).
+
+All writers follow the [descriptive commit message contract](../changes/2026-11-19-descriptive-commit-messages.md).

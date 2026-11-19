@@ -108,3 +108,12 @@ A behavior change is verified when its acceptance criteria are covered, relevant
 checks pass, and specs, help, docs, and dependency locks agree with the result.
 If verification is blocked, describe the implementation as awaiting verification
 and record what remains. Temporary local failures are not permanent project rules.
+
+## Commit messages
+
+Every application-generated metadata commit must name its concrete action and
+target. Describe actual state/field changes (all of them for combined updates),
+not generic "Update pull request" messages. Escape free text to keep subjects
+on one line; do not create commits for no-op updates. Source-code commits must
+also describe the concrete change. Follow specs/architecture.md and its message
+contract when adding new writers.

@@ -4,6 +4,7 @@ Only publication mutates a ref. The old commit is supplied to update-ref so a
 concurrent writer wins safely instead of having their changes silently replaced.
 """
 
+import json
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
@@ -243,7 +244,7 @@ async def create_pull_request(
         store.prs[_name(pr)] = _write_tree(
             store.repo, {COMMENT_PREFIX + COMMENT_MAIN: _blob(store.repo, comment)}
         )
-        store.publish(f"Create pull request {identifier}: {title}")
+        store.publish(f"create pr {identifier}: {json.dumps(title, ensure_ascii=False)}")
         return pr
 
     return _run(directory, create)
@@ -278,6 +279,22 @@ def _origins(store: _Store) -> dict[str, tuple[str, str]]:
     return origins
 
 
+def _pr_update_message(before: PullRequest, after: PullRequest) -> str:
+    """Describe persisted changes, not merely requested tokens or computed state."""
+    actions = []
+    if before.closed != after.closed:
+        actions.append(f"{'close' if after.closed else 'reopen'} pr {after.id}")
+    if before.draft != after.draft:
+        actions.append(f"mark pr {after.id} {'draft' if after.draft else 'ready'}")
+    for field in ("title", "compare", "base"):
+        if getattr(before, field) != getattr(after, field):
+            # Quoting preserves Unicode and escapes embedded newlines/control
+            # characters so user text cannot introduce extra log subjects.
+            value = json.dumps(getattr(after, field), ensure_ascii=False)
+            actions.append(f"set pr {after.id} {field} to {value}")
+    return "; ".join(actions)
+
+
 def update_pull_request(
     identifier: str, updates: Sequence[str], directory: str | Path = "."
 ) -> Result[PullRequest]:
@@ -285,6 +302,7 @@ def update_pull_request(
 
     def update(store: _Store) -> PullRequest:
         old, pr = store.get(identifier)
+        before = pr
         values = _tokens(
             updates, {"compare", "base", "title"}, {"close", "reopen", "draft", "ready"}
         )
@@ -320,7 +338,7 @@ def update_pull_request(
         new = _name(pr)
         if new != old:
             store.prs[new] = store.prs.pop(old)
-            store.publish(f"Update pull request {identifier}")
+            store.publish(_pr_update_message(before, pr))
         return pr
 
     return _run(directory, update)
@@ -439,7 +457,8 @@ async def add_comment(target: str, text: str, directory: str | Path = ".") -> Re
         filename = COMMENT_PREFIX + PR_TITLE_SEPARATOR.join([identifier, *replies])
         entries[filename] = _blob(store.repo, text)
         store.prs[name] = _write_tree(store.repo, entries)
-        store.publish(f"Comment on pull request {pr_id}")
+        reply_detail = f" replying to {', '.join(replies)}" if replies else ""
+        store.publish(f"add comment {identifier} on pr {pr_id}{reply_detail}")
         return Comment(identifier, text, tuple(replies))
 
     return _run(directory, add)
@@ -486,8 +505,10 @@ def _edit_comment(target: str, text: str | None, directory: str | Path) -> Resul
             entries[filename] = _blob(store.repo, text)
             result = replace(selected, text=text)
         store.prs[name] = _write_tree(store.repo, entries)
-        action = "Delete" if text is None else "Update"
-        store.publish(f"{action} comment {identifier} on pull request {pr_id}")
+        action = (
+            f"delete comment {identifier}" if text is None else f"update comment {identifier} text"
+        )
+        store.publish(f"{action} on pr {pr_id}")
         return result
 
     return _run(directory, edit)
