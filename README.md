@@ -27,7 +27,7 @@ in the working directory.
 
 
 ## Pull requests
-[L1]In the "pull-requests" directory, each open pull request is represented by a directory named "c~>b#id:t", where c is the compare branch name, b is the base branch name, id is an unique id and t is the title. If the name is prefixed with the status flag "[closed]", it is closed. If c is an ancestor of b, the pull request is considered to have been merged. If the name is prefixed with the status flag "[draft]", it is a draft pull request. The author of the pull requrest is the creator of the pull request directory as recorded in git. The creation time the pull request is the timestamp of the commit that creates the directory.
+[L1]In the "pull-requests" directory, each open pull request is represented by a directory named "c~>b#id:t", where c is the compare branch name, b is the base branch name, id is an unique id and t is the title. If the name is prefixed with the status flag "[closed]", it is closed. If c is an ancestor of b, the pull request is considered to have been merged. If the name is prefixed with the status flag "[draft]", it is a draft pull request. Draft/ready, open/closed, and merged/not merged are independent: all eight combinations are valid. Both stored flags may be present, written as "[closed][draft]"; merged is determined by ancestry regardless of these flags. The author of the pull requrest is the creator of the pull request directory as recorded in git. The creation time the pull request is the timestamp of the commit that creates the directory.
 
 (L2)To list pull requests, run
 
@@ -67,11 +67,18 @@ where <updates> is one or more of:
 
 ```title=<new title>```
 
-```close```, closes the pull request by changing the status flag to  "[closed]"
+```close```, adds "[closed]" without changing draft status
 
-```draft```, makes the pull request draft
+```reopen```, removes "[closed]" without changing draft status
 
-```ready```, removes the "[draft]" status
+```draft```, makes the pull request draft without changing closed status
+
+```ready```, removes the "[draft]" status without changing closed status
+
+Actions on different states may be combined (for example, `close draft`).
+Contradictory pairs `close reopen` and `draft ready` are errors.
+JSON uses independent `draft`, `closed`, and `merged` booleans. The `open` list
+filter still excludes any draft, closed, or merged PR.
 
 ## Pull request conversation
 (L1)Each comment under a pull request is represented by the file "comment-id" where id is a unique id. The initial comment has id "main". Comment names can have one or more suffix ":id" where id is the comment that this comment addresses. Only the original author should update a comment file.

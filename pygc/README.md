@@ -116,7 +116,8 @@ gc pr list open mine 'title=login.*' base=main
 gc pr update PR_ID 'title=Revised title' draft
 gc pr update PR_ID ready
 gc pr update PR_ID compare=another-branch base=main
-gc pr update PR_ID close
+gc pr update PR_ID close draft  # independent states can be combined
+gc pr update PR_ID reopen       # preserves draft state
 gc pr comments PR_ID
 gc comment PR_ID "Another comment"
 gc comment PR_ID:main "Reply to the description"
@@ -128,9 +129,14 @@ text. List filters combine with AND: `open`, `mine`, `author=NAME_OR_EMAIL`,
 `compare=BRANCH`, `base=BRANCH`, and `title=REGEX`. Full `Name <email>` identities
 also match `author=`. `mine` uses the current Git author email. Unknown or repeated
 filters/updates, invalid regexes, and conflicting status actions fail.
-`ready` removes draft status; it does not reopen a closed PR. `draft` and `close`
-replace the stored status. Open PRs whose compare tip is an ancestor of base are
-reported as merged; missing branches cannot establish merged status.
+`draft`/`ready` change only draft state; `close`/`reopen` change only closed state.
+Actions across axes can be combined. Contradictory actions within an axis fail.
+JSON exposes independent `draft`, `closed`, and `merged` booleans instead of the
+previous exclusive `status` field. All eight combinations are valid. Merged is
+computed from ancestry for every PR, including draft and closed PRs, in creation,
+update and list responses. Missing branches retain a `merged=false` fallback.
+The `open` filter means ready AND not closed AND not merged.
+
 
 ```python
 from pygc import create_pull_request, list_pull_requests, add_comment
@@ -144,7 +150,7 @@ reply = await add_comment("PR_ID:main", "Feedback", directory="/path/to/repo")
 Public APIs return `Result[PullRequest]`, `Result[list[PullRequest]]`,
 `Result[Comment]`, or `Result[list[Comment]]`. `update_pull_request(id, updates,
 directory=".")` accepts the CLI update tokens; `list_comments(id, directory=".")`
-returns exact text and `replies_to` IDs. Creation results contain stored fields.
+returns exact text and `replies_to` IDs. Creation results contain stored fields and computed merged state.
 Update results additionally include the original author and creation time, including no-op updates. Listing resolves
 author, creation time and merged status.
 `generate_id(kind)` in `pygc.library.ids` is async and currently generates random
@@ -153,6 +159,8 @@ UUID strings, distinguishing `pull_request` from `comment` requests.
 Metadata follows `pull-requests/c~>b#id:title/comment-id[:reply-id...]` under the
 reserved directory. Components use percent escaping for separators, spaces,
 slashes and percent signs, so branch names such as `feature/login` round-trip.
+Closed and draft flags may coexist as `[closed][draft]`; legacy single flags
+and either combined order remain readable. Duplicate flags are invalid metadata.
 The initial comment is always `comment-main`. Multiple reply IDs are supported.
 No command edits existing comments. Malformed stored comment filenames or
 non-UTF-8 bodies return `invalid_metadata`; invalid caller-supplied IDs return

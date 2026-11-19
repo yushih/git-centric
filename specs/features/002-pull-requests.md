@@ -17,10 +17,11 @@ An async generate_id(kind) returns a random UUID string for pull_request/comment
 - PR-002: `gc pr list [filters...]` combines open, mine, author=, compare=,
   base=, title=regex with AND. Author matches name, email, or full identity;
   mine matches Git's current author email. Output includes ID, title, branches,
-  author, creation timestamp, and status. Merged means compare is ancestor of base.
+  author, creation timestamp, and independent draft/closed/merged booleans. Merged means compare is ancestor of base.
 - PR-003: `gc pr update id updates...` accepts compare=, base=, title=,
-  close/draft/ready. Reject unknown/duplicate keys and conflicting status actions.
-  ready removes draft only; it does not reopen closed requests. Update results
+  close/reopen and draft/ready. Reject unknown/duplicate keys and contradictory
+  actions within one axis; allow combined actions across axes.
+  ready removes draft only; reopen removes closed only. Update results
   include the original author and creation timestamp, including no-op updates.
 - PR-004: `gc pr comments id` lists comments; `gc comment pr[:reply-id...] text`
   appends a comment addressing existing comments. @- reads stdin verbatim.
@@ -28,7 +29,7 @@ An async generate_id(kind) returns a random UUID string for pull_request/comment
   Fixed argument counts reject extra words; variable arguments reject unknown tokens.
 - PR-005: Every explicitly supplied branch must be an existing local branch.
   Missing branches during later inspection mean merged cannot be established.
-- PR-006: Store directories c~>b#id:title with optional [closed]/[draft] prefix,
+- PR-006: Store directories c~>b#id:title with optional [closed] and [draft] prefixes together,
   and comment-id[:reply-id...] blobs. Percent-encode components (including / and
   delimiters) reversibly. Ordinary names retain the README spelling. Derive author
   and creation time from first-parent Git history by stable PR ID across renames.
@@ -79,3 +80,9 @@ Dependencies, package layout, assets, RPC and frontend are unchanged.
 
 Existing untracked baseline specs and AGENTS.md and the user's root README edits
 are deliberately excluded from the feature commit.
+
+All eight draft/closed/merged combinations are supported. Writers order flags
+[closed][draft]; readers accept either order and legacy single flags, rejecting
+duplicates. Public JSON replaces status with three booleans. Merged is derived
+for create/update/list irrespective of draft/closed. The open filter remains
+!draft && !closed && !merged. See [state change](../changes/2026-11-19-independent-pr-states.md).

@@ -102,7 +102,7 @@ def pr_list(filters: Annotated[list[str] | None, typer.Argument()] = None) -> No
 
 @pr_app.command("update")
 def pr_update(identifier: str, updates: Annotated[list[str], typer.Argument()]) -> None:
-    """Apply compare=, base=, title=, or one of close/draft/ready. Quote each value."""
+    """Apply compare=, base=, title=, draft/ready and close/reopen independently."""
     _output(library.update_pull_request(identifier, updates))
 
 

@@ -59,7 +59,7 @@ def test_lifecycle_history_and_preservation(ready: Path, monkeypatch) -> None:
     listed = list_pull_requests(directory=ready).value[0]
     assert listed.author == "GC tests <gc-tests@example.invalid>"
     assert listed.created_at
-    assert listed.status == "open"
+    assert not (listed.draft or listed.closed or listed.merged)
     monkeypatch.setenv("GIT_AUTHOR_NAME", "Other")
     monkeypatch.setenv("GIT_AUTHOR_EMAIL", "other@example.invalid")
     assert isinstance(update_pull_request(item.id, ["title=Renamed", "draft"], ready), Success)
@@ -90,9 +90,9 @@ def test_filters_and_merged(ready: Path) -> None:
     assert list_pull_requests(["title=absent"], ready) == Success([])
     git(ready, "update-ref", "refs/heads/main", git(ready, "rev-parse", "HEAD"))
     assert list_pull_requests(["open"], ready) == Success([])
-    assert list_pull_requests(directory=ready).value[0].status == "merged"
+    assert list_pull_requests(directory=ready).value[0].merged
     assert isinstance(update_pull_request(item.id, ["close"], ready), Success)
-    assert update_pull_request(item.id, ["ready"], ready).value.status == "closed"
+    assert update_pull_request(item.id, ["ready"], ready).value.closed
 
 
 def test_validation_and_collisions(ready: Path) -> None:
@@ -103,7 +103,7 @@ def test_validation_and_collisions(ready: Path) -> None:
         asyncio.run(create_pull_request("missing", "main", "title", directory=ready)),
         asyncio.run(create_pull_request("main", "main", " ", directory=ready)),
         update_pull_request(item.id, ["compare=missing"], ready),
-        update_pull_request(item.id, ["close", "draft"], ready),
+        update_pull_request(item.id, ["close", "reopen"], ready),
         update_pull_request(item.id, ["title=x", "title=y"], ready),
         update_pull_request(item.id, [], ready),
         list_pull_requests(["compare=missing"], ready),
@@ -190,7 +190,7 @@ def test_bare_deleted_and_unrelated_branches(ready: Path, tmp_path: Path) -> Non
     git(bare, "update-ref", "refs/heads/main", unrelated)
     assert list_pull_requests(["open"], bare).value[0].id == item.id
     git(bare, "branch", "-D", "main")
-    assert list_pull_requests(directory=bare).value[0].status == "open"
+    assert not list_pull_requests(directory=bare).value[0].merged
     assert list_pull_requests(["base=main"], bare).reason == FailureReason.BRANCH_NOT_FOUND
 
 
@@ -353,4 +353,98 @@ def test_update_history_failure_does_not_publish(ready: Path) -> None:
     with patch.object(pr, "_origins", side_effect=OSError("History unavailable")):
         result = update_pull_request(item.id, ["title=Not published"], ready)
     assert isinstance(result, Failure) and result.reason == FailureReason.IO_ERROR
+    assert git(ready, "rev-parse", GC_REF) == before
+
+
+@pytest.mark.parametrize("draft", [False, True])
+@pytest.mark.parametrize("closed", [False, True])
+@pytest.mark.parametrize("merged", [False, True])
+def test_independent_states(ready: Path, draft: bool, closed: bool, merged: bool) -> None:
+    # Exercise every combination against actual branch ancestry and persisted flags.
+    item = create(ready)
+    if merged:
+        git(ready, "update-ref", "refs/heads/main", git(ready, "rev-parse", "HEAD"))
+    actions = ["draft" if draft else "ready", "close" if closed else "reopen"]
+    result = update_pull_request(item.id, actions, ready)
+    assert isinstance(result, Success)
+    assert (result.value.draft, result.value.closed, result.value.merged) == (draft, closed, merged)
+    listed = list_pull_requests(directory=ready).value[0]
+    assert listed == result.value
+    assert bool(list_pull_requests(["open"], ready).value) == (
+        not draft and not closed and not merged
+    )
+    prefix = ("[closed]" if closed else "") + ("[draft]" if draft else "")
+    paths = git(ready, "ls-tree", "-r", "--name-only", GC_REF).splitlines()
+    assert any(f"/pull-requests/{prefix}feature%2Flogin~>" in path for path in paths)
+    # Toggling one axis must preserve both others, including computed ancestry.
+    for action, expected in (
+        ("ready", (False, closed, merged)),
+        ("draft", (True, closed, merged)),
+        ("reopen", (True, False, merged)),
+        ("close", (True, True, merged)),
+    ):
+        changed = update_pull_request(item.id, [action], ready).value
+        assert (changed.draft, changed.closed, changed.merged) == expected
+
+
+def test_state_cli_and_conflicts(ready: Path, monkeypatch) -> None:
+    # JSON exposes all axes and cross-axis actions commute; contradictions never publish.
+    import json
+
+    item = create(ready)
+    monkeypatch.chdir(ready)
+    runner = CliRunner()
+    for actions, expected in (
+        (["draft", "close"], (True, True)),
+        (["reopen", "ready"], (False, False)),
+        (["close", "draft"], (True, True)),
+    ):
+        result = runner.invoke(app, ["pr", "update", item.id, *actions])
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert (payload["draft"], payload["closed"]) == expected
+        assert payload["merged"] is False and "status" not in payload
+    before = git(ready, "rev-parse", GC_REF)
+    for actions in (["draft", "ready"], ["reopen", "close"], ["close", "close"]):
+        assert runner.invoke(app, ["pr", "update", item.id, *actions]).exit_code == 1
+    assert git(ready, "rev-parse", GC_REF) == before
+    assert "reopen" in runner.invoke(app, ["pr", "update", "--help"]).stdout
+
+
+@pytest.mark.parametrize(
+    "prefix,draft,closed",
+    [
+        ("", False, False),
+        ("[draft]", True, False),
+        ("[closed]", False, True),
+        ("[draft][closed]", True, True),
+        ("[closed][draft]", True, True),
+    ],
+)
+def test_state_prefix_compatibility(prefix: str, draft: bool, closed: bool) -> None:
+    # Legacy flags and either combined order parse without consuming the branch name.
+    parsed = pr._parse(prefix + "feature~>main#id:Title")
+    assert (parsed.draft, parsed.closed, parsed.compare) == (draft, closed, "feature")
+    assert pr._parse(pr._name(parsed)) == parsed
+
+
+def test_duplicate_flags_rejected() -> None:
+    # Repeated flags are corruption, rather than silently becoming branch-name text.
+    for prefix in ("[draft][draft]", "[closed][closed]", "[closed][draft][closed]"):
+        with pytest.raises(pr._Problem) as error:
+            pr._parse(prefix + "feature~>main#id:Title")
+        assert error.value.reason == FailureReason.INVALID_METADATA
+
+
+def test_merged_create_and_branch_change(ready: Path) -> None:
+    # Create and update responses resolve ancestry, including changes of branch and no-op writes.
+    item = asyncio.run(
+        create_pull_request("main", "main", "Already contained", directory=ready)
+    ).value
+    assert item.merged and not item.draft and not item.closed
+    changed = update_pull_request(item.id, ["compare=feature/login", "draft", "close"], ready).value
+    assert not changed.merged and changed.draft and changed.closed
+    git(ready, "update-ref", "refs/heads/main", git(ready, "rev-parse", "HEAD"))
+    before = git(ready, "rev-parse", GC_REF)
+    assert update_pull_request(item.id, ["close"], ready).value.merged
     assert git(ready, "rev-parse", GC_REF) == before

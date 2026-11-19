@@ -39,7 +39,9 @@ class PullRequest:
     base: str
     author: str = ""
     created_at: str = ""
-    status: str = "open"
+    draft: bool = False
+    closed: bool = False
+    merged: bool = False
 
 
 @dataclass(frozen=True)
@@ -65,7 +67,7 @@ def _encode(value: str) -> str:
 
 
 def _name(pr: PullRequest) -> str:
-    prefix = {"closed": PR_CLOSED, "draft": PR_DRAFT}.get(pr.status, "")
+    prefix = (PR_CLOSED if pr.closed else "") + (PR_DRAFT if pr.draft else "")
     return (
         f"{prefix}{_encode(pr.compare)}{PR_COMPARE_SEPARATOR}{_encode(pr.base)}"
         f"{PR_ID_SEPARATOR}{pr.id}{PR_TITLE_SEPARATOR}{_encode(pr.title)}"
@@ -73,11 +75,15 @@ def _name(pr: PullRequest) -> str:
 
 
 def _parse(name: str) -> PullRequest:
-    status = "open"
-    for flag, state in ((PR_CLOSED, "closed"), (PR_DRAFT, "draft")):
-        if name.startswith(flag):
-            status, name = state, name[len(flag) :]
-            break
+    # Accept historical single flags and either combined order. Writers use a
+    # canonical order; repeated flags indicate corrupt metadata.
+    flags: set[str] = set()
+    while name.startswith((PR_CLOSED, PR_DRAFT)):
+        flag = PR_CLOSED if name.startswith(PR_CLOSED) else PR_DRAFT
+        if flag in flags:
+            _reject(FailureReason.INVALID_METADATA, "Repeated PR flag")
+        flags.add(flag)
+        name = name[len(flag) :]
     try:
         branches, rest = name.split(PR_ID_SEPARATOR, 1)
         compare, base = branches.split(PR_COMPARE_SEPARATOR, 1)
@@ -86,7 +92,12 @@ def _parse(name: str) -> PullRequest:
         if not compare or not base or not unquote(title).strip():
             raise ValueError("Empty PR component")
         return PullRequest(
-            identifier, unquote(title), unquote(compare), unquote(base), status=status
+            identifier,
+            unquote(title),
+            unquote(compare),
+            unquote(base),
+            draft=PR_DRAFT in flags,
+            closed=PR_CLOSED in flags,
         )
     except (ValueError, _Problem) as exc:
         raise _Problem(FailureReason.INVALID_METADATA, f"Malformed PR directory: {name}") from exc
@@ -198,6 +209,13 @@ def _branch(repo: Repo, name: str) -> None:
         _reject(FailureReason.BRANCH_NOT_FOUND, f"Unknown local branch: {name}")
 
 
+def _merged(repo: Repo, pr: PullRequest, branches: dict[str, str]) -> bool:
+    """Resolve ancestry independently of stored flags, using captured branch tips."""
+    if pr.compare not in branches or pr.base not in branches:
+        return False
+    return branches[pr.compare] in _git(repo, "rev-list", branches[pr.base]).splitlines()
+
+
 def _title(title: str) -> None:
     if not title.strip() or "\0" in title:
         _reject(FailureReason.INVALID_ARGUMENT, "Title must be nonblank and contain no NUL")
@@ -220,6 +238,7 @@ async def create_pull_request(
         if identifier in store.records:
             _reject(FailureReason.ID_CONFLICT, "Generated pull request ID already exists")
         pr = PullRequest(identifier, title, compare, base)
+        pr = replace(pr, merged=_merged(store.repo, pr, _branches(store.repo)))
         store.prs[_name(pr)] = _write_tree(
             store.repo, {COMMENT_PREFIX + COMMENT_MAIN: _blob(store.repo, comment)}
         )
@@ -265,33 +284,38 @@ def update_pull_request(
 
     def update(store: _Store) -> PullRequest:
         old, pr = store.get(identifier)
-        values = _tokens(updates, {"compare", "base", "title"}, {"close", "draft", "ready"})
-        if not values or len(values.keys() & {"close", "draft", "ready"}) > 1:
-            _reject(FailureReason.INVALID_ARGUMENT, "Supply updates and at most one status action")
+        values = _tokens(
+            updates, {"compare", "base", "title"}, {"close", "reopen", "draft", "ready"}
+        )
+        if (
+            not values
+            or {"close", "reopen"} <= values.keys()
+            or {"draft", "ready"} <= values.keys()
+        ):
+            _reject(FailureReason.INVALID_ARGUMENT, "Supply updates without contradictory actions")
         for key in ("compare", "base"):
             if key in values:
                 _branch(store.repo, values[key])
         if "title" in values:
             _title(values["title"])
-        status = pr.status
-        if "close" in values:
-            status = "closed"
-        elif "draft" in values:
-            status = "draft"
-        elif "ready" in values and status == "draft":
-            status = "open"
         pr = replace(
             pr,
             compare=values.get("compare", pr.compare),
             base=values.get("base", pr.base),
             title=values.get("title", pr.title),
-            status=status,
+            draft=True if "draft" in values else False if "ready" in values else pr.draft,
+            closed=True if "close" in values else False if "reopen" in values else pr.closed,
         )
         # Read history before publication: a read failure must not leave a
         # successfully committed update behind a Failure result. The snapshot
         # also gives no-op updates the same original metadata as real writes.
         author, created_at = _origins(store)[identifier]
-        pr = replace(pr, author=author, created_at=created_at)
+        pr = replace(
+            pr,
+            author=author,
+            created_at=created_at,
+            merged=_merged(store.repo, pr, _branches(store.repo)),
+        )
         new = _name(pr)
         if new != old:
             store.prs[new] = store.prs.pop(old)
@@ -325,14 +349,11 @@ def list_pull_requests(
         result = []
         for _, pr in store.records.values():
             author, date = origins[pr.id]
-            status = pr.status
-            if status == "open" and pr.compare in branches and pr.base in branches:
-                compare, base = branches[pr.compare], branches[pr.base]
-                if compare in _git(store.repo, "rev-list", base).splitlines():
-                    status = "merged"
-            pr = replace(pr, author=author, created_at=date, status=status)
+            pr = replace(
+                pr, author=author, created_at=date, merged=_merged(store.repo, pr, branches)
+            )
             email = author.rsplit("<", 1)[-1].removesuffix(">")
-            if "open" in values and status != "open":
+            if "open" in values and (pr.draft or pr.closed or pr.merged):
                 continue
             if mine is not None and email != mine:
                 continue
