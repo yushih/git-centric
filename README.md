@@ -6,8 +6,8 @@ implementation from the broader product vision below.
 
 Git-centric (GC thereafter) is a decentralized platform to let you and your team do whatever you do on centralized git hosting platforms (CG thereafter) without CG. GC has a 3 layer architecture:
 1. Layer 1 (L1 thereafter) is the standard layer consisting of definitions of directory structures and file formats.
-2. Layer 2 is the reference implementation in Bash scripts. With layer 2,  GC can be used in the command line interface.
-3. Layer 3 is the reference Web implementation on top of layer 2. With layer 3, GC exposes a familiar Web interface.
+2. Layer 2 is the reference implementation. Currently, there is a Python based CLI implementation in [pygc/src](pygr/src). This is meant to be used by CLI lovers, CI/CD tools and agents.
+3. Layer 3 is the reference Web shell on top of layer 2 to expose the familiar Web UI. You can run the Web server on localhost and work on your git repo in your browser.
 
 Also, there is simple gossip protocol to support decentralization.
 
@@ -77,8 +77,7 @@ where <updates> is one or more of:
 
 Actions on different states may be combined (for example, `close draft`).
 Contradictory pairs `close reopen` and `draft ready` are errors.
-JSON uses independent `draft`, `closed`, and `merged` booleans. The `open` list
-filter still excludes any draft, closed, or merged PR.
+
 
 ## Pull request conversation
 (L1)Each comment under a pull request is represented by the file "comment-id" where id is a unique id. The initial comment has id "main". Comment names can have one or more suffix ":id" where id is the comment that this comment addresses. Only the original author should update a comment file.
