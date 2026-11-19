@@ -88,7 +88,13 @@ function source(v: unknown) {
   );
 }
 export type Tab = "issues" | "pulls";
-export type Comment = { id: string; text: string; replies_to: string[] };
+export type Comment = {
+  id: string;
+  text: string;
+  author?: string;
+  created_at?: string;
+  replies_to: string[];
+};
 type FileChange = { status: string; path: string; old_path: string | null };
 export type Detail = {
   issue?: Item;
@@ -256,7 +262,14 @@ export async function call<K extends keyof Methods>(
         !record(v) ||
         typeof v.metadata_tip !== "string" ||
         !Array.isArray(v.comments) ||
-        !v.comments.every(comment)
+        !v.comments.every(
+          (c) =>
+            comment(c) &&
+            (!pulls ||
+              (record(c) &&
+                typeof c.author === "string" &&
+                typeof c.created_at === "string")),
+        )
       )
         return false;
       if (!pulls) return item(v.issue);

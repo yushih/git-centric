@@ -230,3 +230,52 @@ article > button {
 button:disabled {
   opacity: 0.6;
 }
+
+.pr-title {
+  margin: 0;
+  padding: 1rem 1rem 0;
+  line-height: 1.25;
+}
+.pr-meta,
+.pr-actions,
+.byline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  overflow-wrap: anywhere;
+}
+.pr-meta,
+.byline time {
+  color: #59636e;
+  font-size: 0.875rem;
+}
+.pr-actions {
+  margin: 1rem 0;
+  gap: 0.5rem;
+}
+.pr-status {
+  background: #e7f1eb;
+  color: #214e34;
+  border-radius: 1rem;
+  padding: 0.25rem 0.8rem;
+  margin-right: 0.4rem;
+}
+.pr-tabs {
+  display: flex;
+  border-bottom: 1px solid #b8c1ca;
+  margin: 1.25rem 0 1rem;
+}
+.pr-tabs a {
+  padding: 0.55rem 0.9rem;
+  border: 1px solid transparent;
+  border-bottom: 3px solid transparent;
+}
+.pr-tabs a[aria-current] {
+  background: #f6f8fa;
+  color: #1f2328;
+  font-weight: 600;
+  border-color: #d1d9e0;
+  border-bottom-color: #0969da;
+  border-radius: 6px 6px 0 0;
+}

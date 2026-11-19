@@ -97,3 +97,10 @@ notice. File links carry the comparison tips so selecting a file after a
 branch moves prompts a refresh. Comparisons and patch previews use immutable
 commits. Mutations require a loopback peer and Host, with same-origin browser
 requests and the specified loopback Vite origins accepted.
+
+PR detail uses the PR title as its page heading. Group state actions with the
+status, link both branch names to Code, and mark the active Conversation or
+Files changed navigation link. Keep stable IDs in routes and writes only.
+Render the opening message without a description label. Replies show the Git
+author and author timestamp of their creation, including after edits and PR
+renames. pulls.show adds author and created_at to each returned comment.

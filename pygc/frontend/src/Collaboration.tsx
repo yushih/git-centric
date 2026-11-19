@@ -220,18 +220,43 @@ export function Collaboration({
           key={c.id}
           tabIndex={-1}
         >
-          <strong>{c.id === "main" ? "Description" : "Comment"}</strong>{" "}
-          <small>{c.id !== "main" && c.id}</small>
+          {pulls ? (
+            c.id !== "main" && (
+              <div className="byline">
+                <strong>Comment by {c.author}</strong>
+                <time dateTime={c.created_at}>
+                  {new Date(c.created_at!).toLocaleString()}
+                </time>
+              </div>
+            )
+          ) : (
+            <>
+              <strong>{c.id === "main" ? "Description" : "Comment"}</strong>{" "}
+              <small>{c.id !== "main" && c.id}</small>
+            </>
+          )}
           {c.replies_to.slice(1).map((t) => (
             <button
               key={t}
               onClick={() => document.getElementById("comment-" + t)?.focus()}
             >
-              Also replies to {t}
+              {pulls
+                ? "Also replies to " +
+                  (t === "main"
+                    ? "the opening message"
+                    : "a comment by " +
+                      detail.comments.find((comment) => comment.id === t)
+                        ?.author)
+                : "Also replies to " + t}
             </button>
           ))}
           <p className="prose">
-            {c.text || (c.id === "main" ? "No description." : "Empty comment.")}
+            {c.text ||
+              (c.id === "main"
+                ? pulls
+                  ? ""
+                  : "No description."
+                : "Empty comment.")}
           </p>
           <div className="controls">
             <button onClick={() => start("reply-" + c.id)}>Reply</button>
@@ -278,22 +303,24 @@ export function Collaboration({
   }
   return (
     <>
-      <div className="heading">
-        <h1>
-          {id || creating ? (
-            <a href={link({ id: null, new: null, view: null, file: null })}>
-              {pageTitle}
+      {!(pulls && id) && (
+        <div className="heading">
+          <h1>
+            {id || creating ? (
+              <a href={link({ id: null, new: null, view: null, file: null })}>
+                {pageTitle}
+              </a>
+            ) : (
+              pageTitle
+            )}
+          </h1>
+          {initialized && !creating && !id && (
+            <a className="primary" href={link({ new: "1" })}>
+              New {noun}
             </a>
-          ) : (
-            pageTitle
           )}
-        </h1>
-        {initialized && !creating && !id && (
-          <a className="primary" href={link({ new: "1" })}>
-            New {noun}
-          </a>
-        )}
-      </div>
+        </div>
+      )}
       {error && (
         <p role="alert">
           {error}{" "}
@@ -365,21 +392,122 @@ export function Collaboration({
             </article>
           ) : id && detail && record ? (
             <article>
-              <h2>{record.title}</h2>
+              {pulls ? (
+                <h1 className="pr-title">{record.title}</h1>
+              ) : (
+                <h2>{record.title}</h2>
+              )}
               <div className="content">
-                <small>
-                  {record.id} · {status(record)} · {record.author} ·{" "}
-                  {record.created_at}
-                </small>
-                {pulls && (
-                  <p>
-                    {record.compare} → {record.base}
-                  </p>
+                {pulls ? (
+                  <div className="pr-meta">
+                    <span>
+                      {record.author} ·{" "}
+                      <time dateTime={record.created_at}>
+                        {new Date(record.created_at).toLocaleString()}
+                      </time>
+                    </span>
+                    <span>
+                      <a
+                        href={
+                          "#code?" +
+                          new URLSearchParams({ branch: record.compare! })
+                        }
+                      >
+                        {record.compare}
+                      </a>{" "}
+                      →{" "}
+                      <a
+                        href={
+                          "#code?" +
+                          new URLSearchParams({ branch: record.base! })
+                        }
+                      >
+                        {record.base}
+                      </a>
+                    </span>
+                  </div>
+                ) : (
+                  <small>
+                    {record.id} · {status(record)} · {record.author} ·{" "}
+                    {record.created_at}
+                  </small>
+                )}
+                <div className={pulls ? "pr-actions" : "controls"}>
+                  {pulls && (
+                    <strong className="pr-status">{status(record)}</strong>
+                  )}
+                  <button onClick={() => start("fields", record.title)}>
+                    Edit {noun}
+                  </button>
+                  <button
+                    onClick={() =>
+                      save(() =>
+                        call(`${tab}.update`, {
+                          ...guard,
+                          state: record.closed ? "reopen" : "close",
+                        }),
+                      )
+                    }
+                  >
+                    {record.closed ? "Reopen" : "Close"} {noun}
+                  </button>
+                  {pulls && (
+                    <button
+                      onClick={() =>
+                        save(() =>
+                          call("pulls.update", {
+                            ...guard,
+                            readiness: record.draft ? "ready" : "draft",
+                          }),
+                        )
+                      }
+                    >
+                      {record.draft ? "Mark ready" : "Convert to draft"}
+                    </button>
+                  )}
+                </div>
+                {editor === "fields" && (
+                  <form
+                    onSubmit={(e) => {
+                      const f = fields(e);
+                      void save(() =>
+                        call(`${tab}.update`, {
+                          ...guard,
+                          title: draft,
+                          ...(pulls
+                            ? { base: f.base, compare: f.compare }
+                            : {}),
+                        }),
+                      );
+                    }}
+                  >
+                    <label>
+                      Title
+                      <input
+                        required
+                        value={draft}
+                        onChange={(e) => write(e.target.value)}
+                      />
+                    </label>
+                    {pulls && selects(record.base, record.compare)}
+                    <button>Save changes</button>
+                    <button type="button" onClick={() => edit("")}>
+                      Cancel
+                    </button>
+                  </form>
                 )}
                 {pulls && (
-                  <nav className="controls">
-                    <a href={link({ view: null, file: null })}>Conversation</a>
-                    <a href={link({ view: "files", file: null })}>
+                  <nav aria-label="Pull request views" className="pr-tabs">
+                    <a
+                      aria-current={!files ? "page" : undefined}
+                      href={link({ view: null, file: null })}
+                    >
+                      Conversation
+                    </a>
+                    <a
+                      aria-current={files ? "page" : undefined}
+                      href={link({ view: "files", file: null })}
+                    >
                       Files changed
                     </a>
                   </nav>
@@ -428,67 +556,6 @@ export function Collaboration({
                   </>
                 ) : (
                   <>
-                    <div className="controls">
-                      <button onClick={() => start("fields", record.title)}>
-                        Edit {noun}
-                      </button>
-                      <button
-                        onClick={() =>
-                          save(() =>
-                            call(`${tab}.update`, {
-                              ...guard,
-                              state: record.closed ? "reopen" : "close",
-                            }),
-                          )
-                        }
-                      >
-                        {record.closed ? "Reopen" : "Close"} {noun}
-                      </button>
-                      {pulls && (
-                        <button
-                          onClick={() =>
-                            save(() =>
-                              call("pulls.update", {
-                                ...guard,
-                                readiness: record.draft ? "ready" : "draft",
-                              }),
-                            )
-                          }
-                        >
-                          {record.draft ? "Mark ready" : "Convert to draft"}
-                        </button>
-                      )}
-                    </div>
-                    {editor === "fields" && (
-                      <form
-                        onSubmit={(e) => {
-                          const f = fields(e);
-                          void save(() =>
-                            call(`${tab}.update`, {
-                              ...guard,
-                              title: draft,
-                              ...(pulls
-                                ? { base: f.base, compare: f.compare }
-                                : {}),
-                            }),
-                          );
-                        }}
-                      >
-                        <label>
-                          Title
-                          <input
-                            required
-                            value={draft}
-                            onChange={(e) => write(e.target.value)}
-                          />
-                        </label>
-                        {pulls && selects(record.base, record.compare)}
-                        <button>Save changes</button>
-                        <button type="button" onClick={() => edit("")}>
-                          Cancel
-                        </button>
-                      </form>
-                    )}
                     {thread(null)}
                     <button onClick={() => start("add")}>Add comment</button>
                     {composer(

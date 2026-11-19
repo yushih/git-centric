@@ -390,7 +390,49 @@ def _merge_analysis(
     return merge_status == 1, conflicts, tuple(changes), ancestor, None
 
 
-def show_pull_request(identifier: str, directory: str | Path = ".") -> Result[PullRequestDetails]:
+@dataclass(frozen=True, kw_only=True)
+class AttributedComment(Comment):
+    author: str
+    created_at: str
+
+
+def _attributed_comments(
+    store: _Store, identifier: str, comments: list[Comment]
+) -> list[AttributedComment]:
+    """Locate creation commits by stable identities, independent of text and path renames."""
+    origins: dict[str, tuple[str, str]] = {}
+    remaining = {comment.id for comment in comments}
+    for oid in reversed(_git(store.repo, "rev-list", "--first-parent", store.oid).splitlines()):
+        gc = _subtree(store.repo, _tree(store.repo, oid), GC_DIRECTORY)
+        prs = _subtree(store.repo, gc, PR_DIRECTORY)
+        name = next((name for name in prs if _parse(name).id == identifier), None)
+        if name is None:
+            continue
+        ids = {
+            filename.removeprefix(COMMENT_PREFIX).partition(PR_TITLE_SEPARATOR)[0]
+            for filename in _subtree(store.repo, prs, name)
+            if filename.startswith(COMMENT_PREFIX)
+        }
+        added = remaining & ids
+        if added:
+            author, date = _git(
+                store.repo, "show", "-s", "--format=%an <%ae>%n%aI", oid
+            ).splitlines()
+            origins.update((key, (author, date)) for key in added)
+            remaining -= added
+            if not remaining:
+                break
+    return [
+        AttributedComment(
+            c.id, c.text, c.replies_to, author=origins[c.id][0], created_at=origins[c.id][1]
+        )
+        for c in comments
+    ]
+
+
+def show_pull_request(
+    identifier: str, directory: str | Path = ".", *, include_comment_origins: bool = False
+) -> Result[PullRequestDetails]:
     """Read a complete conversation from a single captured metadata commit."""
 
     def show(store: _Store) -> PullRequestDetails:
@@ -409,7 +451,13 @@ def show_pull_request(identifier: str, directory: str | Path = ".") -> Result[Pu
                 path.add(current)
                 current = parents[current]
             complete.update(path)
-        author, created_at = _origins(store)[identifier]
+        if include_comment_origins:
+            attributed = _attributed_comments(store, identifier, comments)
+            opening = next(c for c in attributed if c.id == COMMENT_MAIN)
+            author, created_at = opening.author, opening.created_at
+            comments = list(attributed)
+        else:
+            author, created_at = _origins(store)[identifier]
         branches = _branches(store.repo)
         pr = replace(
             pr,
