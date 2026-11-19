@@ -18,7 +18,6 @@ npm ci
 npm run build
 cd ..
 uv run gc help
-uv run gc greet Ada
 uv run gc web
 ```
 
@@ -58,10 +57,21 @@ commit (for example, `git config user.name` and `git config user.email`).
 
 ```sh
 gc init              # work on the current directory
-gc init /path/to/repo # work on an existing repository
+gc init --repo-dir=/path/to/repo # work on an existing repository
 gc help              # includes init
 gc init --help       # describes the optional directory argument
 ```
+
+Every command accepts `--repo-dir=PATH` (or `--repo-dir PATH`) after the command,
+for example `gc pr list --repo-dir=/path/to/repo` and
+`gc update-comment PR_ID:COMMENT_ID "Text" --repo-dir=/path/to/repo`.
+Without it, repository operations use the current directory. If both the current
+and selected directories are Git-centric initialized repositories and differ,
+a warning is printed to stderr; the explicit option wins. Subdirectories,
+symlink aliases and linked worktrees of the same repository do not warn.
+An invalid explicit path fails without falling back to the current directory.
+The legacy `gc init DIRECTORY` form remains supported; `--repo-dir` overrides it.
+`help` and `web` accept the option but perform no repository operations.
 
 Use `uv run gc` if the virtual environment is not activated. Initialization
 does not create a Git repository: use `git init` first if needed. Worktree
@@ -122,6 +132,9 @@ gc pr comments PR_ID
 gc comment PR_ID "Another comment"
 gc comment PR_ID:main "Reply to the description"
 gc comment PR_ID:COMMENT_ID @-
+gc update-comment PR_ID:COMMENT_ID "Revised text"
+gc update-comment PR_ID:main @-
+gc delete-comment PR_ID:COMMENT_ID
 ```
 
 Commands emit JSON records (lists for `list` and `comments`), preserving multiline
@@ -162,7 +175,13 @@ slashes and percent signs, so branch names such as `feature/login` round-trip.
 Closed and draft flags may coexist as `[closed][draft]`; legacy single flags
 and either combined order remain readable. Duplicate flags are invalid metadata.
 The initial comment is always `comment-main`. Multiple reply IDs are supported.
-No command edits existing comments. Malformed stored comment filenames or
+Use `update_comment(target, text, directory=".")` to replace text and
+`delete_comment(target, directory=".")` to delete a comment. These synchronous
+APIs return the updated or removed `Comment`. Targets require exactly
+`PR_ID:COMMENT_ID`. Identical updates do not create commits. Deletion preserves
+replies and their text, removing links to the deleted ID. The required `main`
+description cannot be deleted; clear it with `gc update-comment PR_ID:main ""`.
+Any local author can edit/delete comments; prior contents remain in Git history. Malformed stored comment filenames or
 non-UTF-8 bodies return `invalid_metadata`; invalid caller-supplied IDs return
 `invalid_argument`. Git history supplies PR creator and creation
 time, tracked by stable ID through directory renames along first-parent history.

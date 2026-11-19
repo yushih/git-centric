@@ -12,14 +12,12 @@ client = TestClient(create_app())
 runner = CliRunner()
 
 
-def test_library_and_cli() -> None:
-    # The CLI must return the library greeting and translate blank-name validation into a usage
-    # error.
+def test_library_greeting_and_removed_cli() -> None:
+    # The library/RPC demo remains available, but its removed CLI command is rejected.
     assert greet(" Ada ") == "Hello, Ada!"
     result = runner.invoke(app, ["greet", "Ada"])
-    assert result.exit_code == 0
-    assert result.stdout.strip() == greet("Ada")
-    assert runner.invoke(app, ["greet", " "]).exit_code == 2
+    assert result.exit_code == 2
+    assert "No such command" in result.stderr
     with pytest.raises(ValueError):
         greet(" ")
 
@@ -29,7 +27,7 @@ def test_help_and_web() -> None:
     for args in (["help"], ["--help"]):
         result = runner.invoke(app, args)
         assert result.exit_code == 0
-        assert "greet" in result.stdout and "web" in result.stdout
+        assert "greet" not in result.stdout and "web" in result.stdout
     # Mock the launcher so this checks CLI wiring without starting a blocking server.
     with patch("pygc.cli.uvicorn.run") as run:
         assert runner.invoke(app, ["web", "--port", "9000", "--reload"]).exit_code == 0

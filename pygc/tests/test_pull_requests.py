@@ -280,7 +280,12 @@ def test_corrupt_comments_are_metadata_failures(ready: Path, corruption: str) ->
         store.prs[name] = pr._write_tree(repository, entries)
         store.publish("Corrupt conversation fixture")
     before = git(ready, "rev-parse", GC_REF)
-    for result in (list_comments(item.id, ready), asyncio.run(add_comment(item.id, "body", ready))):
+    for result in (
+        list_comments(item.id, ready),
+        asyncio.run(add_comment(item.id, "body", ready)),
+        pr.update_comment(item.id + ":main", "changed", ready),
+        pr.delete_comment(item.id + ":main", ready),
+    ):
         assert isinstance(result, Failure)
         assert result.reason == FailureReason.INVALID_METADATA
     assert git(ready, "rev-parse", GC_REF) == before
@@ -448,3 +453,114 @@ def test_merged_create_and_branch_change(ready: Path) -> None:
     before = git(ready, "rev-parse", GC_REF)
     assert update_pull_request(item.id, ["close"], ready).value.merged
     assert git(ready, "rev-parse", GC_REF) == before
+
+
+def test_edit_delete_comments_preserve_state(ready: Path) -> None:
+    # Editing preserves reply IDs; deleting detaches incoming links without
+    # rewriting surviving bodies, the checkout, or old committed history.
+    from pygc import delete_comment, update_comment
+
+    item = create(ready)
+    first = asyncio.run(add_comment(item.id + ":main", "Review", ready)).value
+    reply = asyncio.run(add_comment(f"{item.id}:main:{first.id}", "Keep reply", ready)).value
+    (ready / "dirty").write_text("staged")
+    git(ready, "add", "dirty")
+    (ready / "dirty").write_text("unstaged")
+    index = (ready / ".git/index").read_bytes()
+    head = git(ready, "rev-parse", "HEAD")
+    before = git(ready, "rev-parse", GC_REF)
+    target = f"{item.id}:{first.id}"
+    text = "café 日本語\n\n  spaces  \n"
+    updated = update_comment(target, text, ready).value
+    assert updated.id == first.id and updated.replies_to == ("main",)
+    assert updated.text == text
+    after = git(ready, "rev-parse", GC_REF)
+    assert git(ready, "rev-list", "--parents", "-n", "1", after) == f"{after} {before}"
+    # Independent blob reads verify exact text and historical preservation.
+    import subprocess
+
+    path = next(
+        p
+        for p in git(ready, "ls-tree", "-r", "--name-only", after).splitlines()
+        if p.endswith(f"/comment-{first.id}:main")
+    )
+    assert (
+        subprocess.check_output(["git", "-C", str(ready), "show", f"{after}:{path}"])
+        == text.encode()
+    )
+    assert git(ready, "show", f"{before}:{path}") == "Review"
+    assert update_comment(target, text, ready) == Success(updated)
+    assert git(ready, "rev-parse", GC_REF) == after
+    assert delete_comment(target, ready) == Success(updated)
+    comments = list_comments(item.id, ready).value
+    assert [c.id for c in comments] == ["main", reply.id]
+    assert comments[1].text == reply.text and comments[1].replies_to == ("main",)
+    assert f"comment-{first.id}" not in git(ready, "ls-tree", "-r", "--name-only", GC_REF)
+    assert update_comment(f"{item.id}:main", "", ready).value.text == ""
+    assert git(ready, "rev-parse", "HEAD") == head
+    assert (ready / ".git/index").read_bytes() == index
+    assert (ready / "dirty").read_text() == "unstaged"
+
+
+def test_comment_edit_cli_and_errors(ready: Path, monkeypatch) -> None:
+    # CLI stdin is verbatim and invalid targets/arity never publish a commit.
+    import json
+
+    from pygc import delete_comment, update_comment
+
+    item = create(ready)
+    comment = asyncio.run(add_comment(item.id, "old", ready)).value
+    target = f"{item.id}:{comment.id}"
+    monkeypatch.chdir(ready)
+    runner = CliRunner()
+    result = runner.invoke(app, ["update-comment", target, "@-"], input="new\n\n")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["text"] == "new\n\n"
+    before = git(ready, "rev-parse", GC_REF)
+    for invalid in (item.id, item.id + ":", item.id + ":main:main", "!:main"):
+        assert update_comment(invalid, "x").reason == FailureReason.INVALID_ARGUMENT
+        assert delete_comment(invalid).reason == FailureReason.INVALID_ARGUMENT
+    assert delete_comment(item.id + ":main").reason == FailureReason.INVALID_ARGUMENT
+    for missing in (item.id + ":missing", "missing:main"):
+        assert update_comment(missing, "x").reason == FailureReason.NOT_FOUND
+        assert delete_comment(missing).reason == FailureReason.NOT_FOUND
+    for args in (
+        ["delete-comment", target, "extra"],
+        ["update-comment", target],
+        ["update-comment", target, "text", "extra"],
+    ):
+        assert runner.invoke(app, args).exit_code == 2
+    assert runner.invoke(app, ["delete-comment", item.id + ":main"]).exit_code == 1
+    assert git(ready, "rev-parse", GC_REF) == before
+    assert runner.invoke(app, ["delete-comment", target]).exit_code == 0
+    for command in ("delete-comment", "update-comment"):
+        assert command in runner.invoke(app, ["help"]).stdout
+        assert "PR_ID:COMMENT_ID" in runner.invoke(app, [command, "--help"]).stdout
+
+
+@pytest.mark.parametrize("delete", [False, True])
+def test_comment_edit_concurrent_publication(ready: Path, delete: bool) -> None:
+    # A competing text update survives either type of losing mutation.
+    from pygc import delete_comment, update_comment
+
+    item = create(ready)
+    comment = asyncio.run(add_comment(item.id, "old", ready)).value
+    target = f"{item.id}:{comment.id}"
+    original = pr._git
+    winner = None
+
+    def race(repository, *args, **kwargs):
+        nonlocal winner
+        if args[0] == "update-ref":
+            with patch.object(pr, "_git", original):
+                assert isinstance(update_comment(target, "winner", ready), Success)
+                winner = git(ready, "rev-parse", GC_REF)
+        return original(repository, *args, **kwargs)
+
+    with patch.object(pr, "_git", side_effect=race):
+        result = delete_comment(target, ready) if delete else update_comment(target, "loser", ready)
+    assert isinstance(result, Failure) and result.reason == FailureReason.GIT_ERROR
+    assert git(ready, "rev-parse", GC_REF) == winner
+    assert (
+        next(c for c in list_comments(item.id, ready).value if c.id == comment.id).text == "winner"
+    )

@@ -5,15 +5,57 @@ from typing import Annotated
 
 import typer
 import uvicorn
+from git import Repo
+from git.exc import GitError
 
 from . import library
 
-app = typer.Typer(no_args_is_help=True, help="Git-centric command line tools.")
+app = typer.Typer(
+    no_args_is_help=True,
+    help="Git-centric tools. Commands accept --repo-dir; default: current directory.",
+)
+
+
+RepoDir = Annotated[
+    Path | None,
+    typer.Option("--repo-dir", help="Repository directory; overrides the current directory."),
+]
+
+
+def _directory(repo_dir: Path | None, default: Path = Path(".")) -> Path:
+    """Select a path without chdir; ambiguity checks are advisory, never fallback."""
+    if repo_dir is None:
+        return default
+    if library.is_gc_initialized() == library.Success(True) and library.is_gc_initialized(
+        repo_dir
+    ) == library.Success(True):
+        try:
+            # Common directories identify the shared refs even across linked
+            # worktrees. Resolving paths also collapses symlinks and ../ aliases.
+            with (
+                Repo(Path.cwd(), search_parent_directories=True, expand_vars=False) as current,
+                Repo(
+                    repo_dir.absolute(), search_parent_directories=True, expand_vars=False
+                ) as chosen,
+            ):
+                different = Path(current.common_dir).resolve() != Path(chosen.common_dir).resolve()
+        except (OSError, GitError):
+            # A repo can disappear between inspection and discovery. Let the
+            # actual operation return its normal Result rather than redirecting it.
+            different = False
+        if different:
+            typer.echo(
+                f"Warning: current directory {Path.cwd()} and --repo-dir {repo_dir.absolute()} "
+                "are different initialized repositories; using --repo-dir.",
+                err=True,
+            )
+    return repo_dir
 
 
 @app.command("help")
-def help_command(ctx: typer.Context) -> None:
+def help_command(ctx: typer.Context, repo_dir: RepoDir = None) -> None:
     """Show the top-level help message."""
+    _directory(repo_dir)
     assert ctx.parent is not None
     typer.echo(ctx.parent.get_help())
 
@@ -21,13 +63,15 @@ def help_command(ctx: typer.Context) -> None:
 @app.command()
 def init(
     directory: Annotated[
-        Path, typer.Argument(help="Git repository directory; defaults to the current directory.")
+        Path,
+        typer.Argument(help="Legacy repository directory; --repo-dir overrides it. Default: cwd."),
     ] = Path("."),
+    repo_dir: RepoDir = None,
 ) -> None:
     """Initialize Git-centric metadata in an existing Git repository."""
     # Translate the library's result into CLI output and an exit status. The
     # library itself remains independent of Typer and never exits the process.
-    match library.initialize_gc(directory):
+    match library.initialize_gc(_directory(repo_dir, directory)):
         case library.Success(commit):
             typer.echo(f"Initialized Git-centric ({commit})")
         case library.Failure(reason, detail):
@@ -36,21 +80,14 @@ def init(
 
 
 @app.command()
-def greet(name: Annotated[str, typer.Argument(help="Name to greet.")] = "world") -> None:
-    """Call the library's example greeting function."""
-    try:
-        typer.echo(library.greet(name))
-    except ValueError as exc:
-        raise typer.BadParameter(str(exc), param_hint="name") from exc
-
-
-@app.command()
 def web(
     host: Annotated[str, typer.Option(help="Address to bind.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(min=1, max=65535)] = 8000,
     reload: Annotated[bool, typer.Option(help="Reload Python code during development.")] = False,
+    repo_dir: RepoDir = None,
 ) -> None:
     """Start the FastAPI server and serve the built React frontend."""
+    _directory(repo_dir)
     uvicorn.run("pygc.web:create_app", factory=True, host=host, port=port, reload=reload)
 
 
@@ -87,34 +124,60 @@ def _text(value: str) -> str:
 
 
 @pr_app.command("new")
-def pr_new(compare: str, base: str, title: str, comment: str = typer.Argument("")) -> None:
+def pr_new(
+    compare: str, base: str, title: str, comment: str = typer.Argument(""), repo_dir: RepoDir = None
+) -> None:
     """Create a PR: COMPARE BASE TITLE [COMMENT]. Quote text; @- reads stdin."""
     import asyncio
 
-    _output(asyncio.run(library.create_pull_request(compare, base, title, _text(comment))))
+    _output(
+        asyncio.run(
+            library.create_pull_request(
+                compare, base, title, _text(comment), directory=_directory(repo_dir)
+            )
+        )
+    )
 
 
 @pr_app.command("list")
-def pr_list(filters: Annotated[list[str] | None, typer.Argument()] = None) -> None:
+def pr_list(
+    filters: Annotated[list[str] | None, typer.Argument()] = None, repo_dir: RepoDir = None
+) -> None:
     """Filter with open, mine, author=, compare=, base=, title=REGEX (AND)."""
-    _output(library.list_pull_requests(filters or ()))
+    _output(library.list_pull_requests(filters or (), directory=_directory(repo_dir)))
 
 
 @pr_app.command("update")
-def pr_update(identifier: str, updates: Annotated[list[str], typer.Argument()]) -> None:
+def pr_update(
+    identifier: str, updates: Annotated[list[str], typer.Argument()], repo_dir: RepoDir = None
+) -> None:
     """Apply compare=, base=, title=, draft/ready and close/reopen independently."""
-    _output(library.update_pull_request(identifier, updates))
+    _output(library.update_pull_request(identifier, updates, directory=_directory(repo_dir)))
 
 
 @pr_app.command("comments")
-def pr_comments(identifier: str) -> None:
+def pr_comments(identifier: str, repo_dir: RepoDir = None) -> None:
     """Show a pull request's comments and reply IDs."""
-    _output(library.list_comments(identifier))
+    _output(library.list_comments(identifier, directory=_directory(repo_dir)))
 
 
 @app.command("comment")
-def comment_command(target: str, comment: str) -> None:
+def comment_command(target: str, comment: str, repo_dir: RepoDir = None) -> None:
     """Append quoted COMMENT to PR[:COMMENT_ID...]; @- reads stdin."""
     import asyncio
 
-    _output(asyncio.run(library.add_comment(target, _text(comment))))
+    _output(
+        asyncio.run(library.add_comment(target, _text(comment), directory=_directory(repo_dir)))
+    )
+
+
+@app.command("update-comment")
+def update_comment_command(target: str, text: str, repo_dir: RepoDir = None) -> None:
+    """Replace PR_ID:COMMENT_ID text. Quote TEXT; @- reads stdin; empty text clears."""
+    _output(library.update_comment(target, _text(text), directory=_directory(repo_dir)))
+
+
+@app.command("delete-comment")
+def delete_comment_command(target: str, repo_dir: RepoDir = None) -> None:
+    """Delete PR_ID:COMMENT_ID and its reply links. Main must be cleared instead."""
+    _output(library.delete_comment(target, directory=_directory(repo_dir)))

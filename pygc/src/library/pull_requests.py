@@ -8,6 +8,7 @@ import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import NoReturn
 from urllib.parse import quote, unquote
 
 from git import Repo
@@ -57,7 +58,7 @@ class _Problem(Exception):
         super().__init__(detail)
 
 
-def _reject(reason: FailureReason, detail: str) -> None:
+def _reject(reason: FailureReason, detail: str) -> NoReturn:
     raise _Problem(reason, detail)
 
 
@@ -442,3 +443,61 @@ async def add_comment(target: str, text: str, directory: str | Path = ".") -> Re
         return Comment(identifier, text, tuple(replies))
 
     return _run(directory, add)
+
+
+def _comment_filename(comment: Comment) -> str:
+    return COMMENT_PREFIX + PR_TITLE_SEPARATOR.join([comment.id, *comment.replies_to])
+
+
+def _edit_comment(target: str, text: str | None, directory: str | Path) -> Result[Comment]:
+    # None denotes deletion; empty text remains a valid replacement, including
+    # for main. Validate the whole conversation before preparing any mutation.
+    def edit(store: _Store) -> Comment:
+        parts = target.split(PR_TITLE_SEPARATOR)
+        if len(parts) != 2:
+            _reject(FailureReason.INVALID_ARGUMENT, "Expected PR_ID:COMMENT_ID")
+        pr_id, identifier = parts
+        _identifier(identifier)
+        name, _ = store.get(pr_id)
+        comments = _comments(store, name)
+        selected = next((comment for comment in comments if comment.id == identifier), None)
+        if selected is None:
+            _reject(FailureReason.NOT_FOUND, f"Unknown comment: {identifier}")
+        if text is None and identifier == COMMENT_MAIN:
+            _reject(
+                FailureReason.INVALID_ARGUMENT, "Main cannot be deleted; update its text to empty"
+            )
+        if text == selected.text:
+            return selected
+        entries = _subtree(store.repo, store.prs, name)
+        filename = _comment_filename(selected)
+        if text is None:
+            del entries[filename]
+            # Preserve surviving reply bodies byte-for-byte. Only their filename
+            # edges change so the existing no-dangling-replies invariant holds.
+            for comment in comments:
+                if comment.id != identifier and identifier in comment.replies_to:
+                    changed = replace(
+                        comment, replies_to=tuple(r for r in comment.replies_to if r != identifier)
+                    )
+                    entries[_comment_filename(changed)] = entries.pop(_comment_filename(comment))
+            result = selected
+        else:
+            entries[filename] = _blob(store.repo, text)
+            result = replace(selected, text=text)
+        store.prs[name] = _write_tree(store.repo, entries)
+        action = "Delete" if text is None else "Update"
+        store.publish(f"{action} comment {identifier} on pull request {pr_id}")
+        return result
+
+    return _run(directory, edit)
+
+
+def update_comment(target: str, text: str, directory: str | Path = ".") -> Result[Comment]:
+    """Replace PR_ID:COMMENT_ID text, preserving identity and reply links."""
+    return _edit_comment(target, text, directory)
+
+
+def delete_comment(target: str, directory: str | Path = ".") -> Result[Comment]:
+    """Remove a non-main comment and incoming reply links; return the removed record."""
+    return _edit_comment(target, None, directory)
