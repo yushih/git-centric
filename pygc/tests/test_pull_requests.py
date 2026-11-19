@@ -314,3 +314,43 @@ def test_concurrent_comment_is_not_lost(ready: Path) -> None:
         "initial\n\n",
         "Competing reply",
     ]
+
+
+@pytest.mark.parametrize("via_cli", [False, True])
+def test_update_returns_original_creation_metadata(ready: Path, monkeypatch, via_cli: bool) -> None:
+    # A later author renames the PR; both the write and subsequent no-op must
+    # return the creation commit's identity/time, never the update commit's.
+    import json
+
+    monkeypatch.setenv("GIT_AUTHOR_DATE", "2020-01-02T03:04:05+00:00")
+    item = create(ready)
+    author, created_at = git(ready, "show", "-s", "--format=%an <%ae>%n%aI", GC_REF).splitlines()
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "Updater")
+    monkeypatch.setenv("GIT_AUTHOR_EMAIL", "updater@example.invalid")
+    monkeypatch.setenv("GIT_AUTHOR_DATE", "2021-02-03T04:05:06+00:00")
+    monkeypatch.chdir(ready)
+    runner = CliRunner()
+    for no_op in (False, True):
+        before = git(ready, "rev-parse", GC_REF)
+        if via_cli:
+            result = runner.invoke(app, ["pr", "update", item.id, "title=Renamed"])
+            assert result.exit_code == 0, result.output
+            payload = json.loads(result.stdout)
+            assert (payload["author"], payload["created_at"]) == (author, created_at)
+        else:
+            result = update_pull_request(item.id, ["title=Renamed"], ready)
+            assert isinstance(result, Success)
+            assert (result.value.author, result.value.created_at) == (author, created_at)
+        assert (git(ready, "rev-parse", GC_REF) == before) == no_op
+        listed = list_pull_requests(directory=ready).value[0]
+        assert (listed.author, listed.created_at) == (author, created_at)
+
+
+def test_update_history_failure_does_not_publish(ready: Path) -> None:
+    # Resolving the response must complete before mutation reaches the metadata ref.
+    item = create(ready)
+    before = git(ready, "rev-parse", GC_REF)
+    with patch.object(pr, "_origins", side_effect=OSError("History unavailable")):
+        result = update_pull_request(item.id, ["title=Not published"], ready)
+    assert isinstance(result, Failure) and result.reason == FailureReason.IO_ERROR
+    assert git(ready, "rev-parse", GC_REF) == before

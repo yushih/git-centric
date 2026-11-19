@@ -241,6 +241,23 @@ def _tokens(tokens: Sequence[str], keys: set[str], flags: set[str]) -> dict[str,
     return result
 
 
+def _origins(store: _Store) -> dict[str, tuple[str, str]]:
+    """Resolve creation metadata at the captured snapshot, following stable IDs."""
+    # Scan oldest to newest, matching stable IDs, so renames do not reauthor a PR.
+    origins: dict[str, tuple[str, str]] = {}
+    for oid in reversed(_git(store.repo, "rev-list", "--first-parent", store.oid).splitlines()):
+        root = _tree(store.repo, oid)
+        gc = _subtree(store.repo, root, GC_DIRECTORY)
+        for name in _subtree(store.repo, gc, PR_DIRECTORY):
+            identifier = _parse(name).id
+            if identifier not in origins:
+                author, date = _git(
+                    store.repo, "show", "-s", "--format=%an <%ae>%n%aI", oid
+                ).splitlines()
+                origins[identifier] = author, date
+    return origins
+
+
 def update_pull_request(
     identifier: str, updates: Sequence[str], directory: str | Path = "."
 ) -> Result[PullRequest]:
@@ -270,6 +287,11 @@ def update_pull_request(
             title=values.get("title", pr.title),
             status=status,
         )
+        # Read history before publication: a read failure must not leave a
+        # successfully committed update behind a Failure result. The snapshot
+        # also gives no-op updates the same original metadata as real writes.
+        author, created_at = _origins(store)[identifier]
+        pr = replace(pr, author=author, created_at=created_at)
         new = _name(pr)
         if new != old:
             store.prs[new] = store.prs.pop(old)
@@ -298,18 +320,7 @@ def list_pull_requests(
             if "mine" in values
             else None
         )
-        # Scan oldest to newest, matching stable IDs, so renames do not reauthor a PR.
-        origins: dict[str, tuple[str, str]] = {}
-        for oid in reversed(_git(store.repo, "rev-list", "--first-parent", store.oid).splitlines()):
-            root = _tree(store.repo, oid)
-            gc = _subtree(store.repo, root, GC_DIRECTORY)
-            for name in _subtree(store.repo, gc, PR_DIRECTORY):
-                identifier = _parse(name).id
-                if identifier not in origins:
-                    author, date = _git(
-                        store.repo, "show", "-s", "--format=%an <%ae>%n%aI", oid
-                    ).splitlines()
-                    origins[identifier] = author, date
+        origins = _origins(store)
         branches = _branches(store.repo)
         result = []
         for _, pr in store.records.values():

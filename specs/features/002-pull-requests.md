@@ -20,7 +20,8 @@ An async generate_id(kind) returns a random UUID string for pull_request/comment
   author, creation timestamp, and status. Merged means compare is ancestor of base.
 - PR-003: `gc pr update id updates...` accepts compare=, base=, title=,
   close/draft/ready. Reject unknown/duplicate keys and conflicting status actions.
-  ready removes draft only; it does not reopen closed requests.
+  ready removes draft only; it does not reopen closed requests. Update results
+  include the original author and creation timestamp, including no-op updates.
 - PR-004: `gc pr comments id` lists comments; `gc comment pr[:reply-id...] text`
   appends a comment addressing existing comments. @- reads stdin verbatim.
   Malformed stored comment IDs and non-UTF-8 text return invalid_metadata.

@@ -144,8 +144,9 @@ reply = await add_comment("PR_ID:main", "Feedback", directory="/path/to/repo")
 Public APIs return `Result[PullRequest]`, `Result[list[PullRequest]]`,
 `Result[Comment]`, or `Result[list[Comment]]`. `update_pull_request(id, updates,
 directory=".")` accepts the CLI update tokens; `list_comments(id, directory=".")`
-returns exact text and `replies_to` IDs. Creation/update results contain stored
-fields; listing additionally resolves author, creation time and merged status.
+returns exact text and `replies_to` IDs. Creation results contain stored fields.
+Update results additionally include the original author and creation time, including no-op updates. Listing resolves
+author, creation time and merged status.
 `generate_id(kind)` in `pygc.library.ids` is async and currently generates random
 UUID strings, distinguishing `pull_request` from `comment` requests.
 
