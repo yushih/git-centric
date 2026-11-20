@@ -220,43 +220,29 @@ export function Collaboration({
           key={c.id}
           tabIndex={-1}
         >
-          {pulls ? (
-            c.id !== "main" && (
-              <div className="byline">
-                <strong>Comment by {c.author}</strong>
-                <time dateTime={c.created_at}>
-                  {new Date(c.created_at!).toLocaleString()}
-                </time>
-              </div>
-            )
-          ) : (
-            <>
-              <strong>{c.id === "main" ? "Description" : "Comment"}</strong>{" "}
-              <small>{c.id !== "main" && c.id}</small>
-            </>
+          {c.id !== "main" && (
+            <div className="byline">
+              <strong>Comment by {c.author}</strong>
+              <time dateTime={c.created_at}>
+                {new Date(c.created_at!).toLocaleString()}
+              </time>
+            </div>
           )}
           {c.replies_to.slice(1).map((t) => (
             <button
               key={t}
               onClick={() => document.getElementById("comment-" + t)?.focus()}
             >
-              {pulls
-                ? "Also replies to " +
-                  (t === "main"
-                    ? "the opening message"
-                    : "a comment by " +
-                      detail.comments.find((comment) => comment.id === t)
-                        ?.author)
-                : "Also replies to " + t}
+              {"Also replies to " +
+                (t === "main"
+                  ? "the opening message"
+                  : "a comment by " +
+                    detail.comments.find((comment) => comment.id === t)
+                      ?.author)}
             </button>
           ))}
           <p className="prose">
-            {c.text ||
-              (c.id === "main"
-                ? pulls
-                  ? ""
-                  : "No description."
-                : "Empty comment.")}
+            {c.text || (c.id === "main" ? "" : "Empty comment.")}
           </p>
           <div className="controls">
             <button onClick={() => start("reply-" + c.id)}>Reply</button>
@@ -303,7 +289,7 @@ export function Collaboration({
   }
   return (
     <>
-      {!(pulls && id) && (
+      {!id && (
         <div className="heading">
           <h1>
             {id || creating ? (
@@ -392,20 +378,16 @@ export function Collaboration({
             </article>
           ) : id && detail && record ? (
             <article>
-              {pulls ? (
-                <h1 className="pr-title">{record.title}</h1>
-              ) : (
-                <h2>{record.title}</h2>
-              )}
+              <h1 className="detail-title">{record.title}</h1>
               <div className="content">
-                {pulls ? (
-                  <div className="pr-meta">
-                    <span>
-                      {record.author} ·{" "}
-                      <time dateTime={record.created_at}>
-                        {new Date(record.created_at).toLocaleString()}
-                      </time>
-                    </span>
+                <div className="detail-meta">
+                  <span>
+                    {record.author} ·{" "}
+                    <time dateTime={record.created_at}>
+                      {new Date(record.created_at).toLocaleString()}
+                    </time>
+                  </span>
+                  {pulls && (
                     <span>
                       <a
                         href={
@@ -425,17 +407,10 @@ export function Collaboration({
                         {record.base}
                       </a>
                     </span>
-                  </div>
-                ) : (
-                  <small>
-                    {record.id} · {status(record)} · {record.author} ·{" "}
-                    {record.created_at}
-                  </small>
-                )}
-                <div className={pulls ? "pr-actions" : "controls"}>
-                  {pulls && (
-                    <strong className="pr-status">{status(record)}</strong>
                   )}
+                </div>
+                <div className="detail-actions">
+                  <strong className="detail-status">{status(record)}</strong>
                   <button onClick={() => start("fields", record.title)}>
                     Edit {noun}
                   </button>

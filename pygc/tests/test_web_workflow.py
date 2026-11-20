@@ -3,6 +3,7 @@
 import asyncio
 
 import httpx
+import pytest
 from test_initialization import git, isolated_git_config, repo  # noqa: F401
 
 from pygc.library.constants import GC_REF
@@ -104,8 +105,9 @@ def test_pinned_source_previews(repo, tmp_path):  # noqa: F811
     assert browse_source(repo, detail=True, path="large").value["changes"][0]["status"] == "deleted"
 
 
-def test_pr_reply_keeps_creation_byline(repo, monkeypatch):  # noqa: F811
-    # Historical PR renames and subsequent edits must retain the original reply author and date.
+@pytest.mark.parametrize("tab", ["issues", "pulls"])
+def test_reply_keeps_creation_byline(repo, monkeypatch, tab):  # noqa: F811
+    # Historical entity renames and subsequent edits must retain the original reply author and date.
     git(repo, "commit", "--allow-empty", "-m", "Source")
     git(repo, "branch", "topic/byline")
     methods = repository_methods(repo)
@@ -114,29 +116,28 @@ def test_pr_reply_keeps_creation_byline(repo, monkeypatch):  # noqa: F811
         return dispatch(dict(jsonrpc="2.0", id=1, method=method, params=params), methods)["result"]
 
     rpc("repo.initialize")
-    pr = rpc(
-        "pulls.create", title="Original", base="main", compare="topic/byline", description="Opening"
-    )
+    branches = {"base": "main", "compare": "topic/byline"} if tab == "pulls" else {}
+    item = rpc(f"{tab}.create", title="Original", description="Opening", **branches)
     monkeypatch.setenv("GIT_AUTHOR_NAME", "Reviewer")
     monkeypatch.setenv("GIT_AUTHOR_DATE", "2024-04-05T10:11:12+02:00")
     reply = rpc(
-        "pulls.comments.add",
-        id=pr["id"],
+        f"{tab}.comments.add",
+        id=item["id"],
         expectedTip=git(repo, "rev-parse", GC_REF),
         repliesTo=["main"],
         text="Review",
     )
     author, date = git(repo, "show", "-s", "--format=%an <%ae>%n%aI", GC_REF).splitlines()
     monkeypatch.setenv("GIT_AUTHOR_NAME", "Editor")
-    rpc("pulls.update", id=pr["id"], expectedTip=git(repo, "rev-parse", GC_REF), title="Renamed")
+    rpc(f"{tab}.update", id=item["id"], expectedTip=git(repo, "rev-parse", GC_REF), title="Renamed")
     rpc(
-        "pulls.comments.update",
-        id=pr["id"],
+        f"{tab}.comments.update",
+        id=item["id"],
         expectedTip=git(repo, "rev-parse", GC_REF),
         comment=reply["id"],
         text="Revised",
     )
-    detail = rpc("pulls.show", id=pr["id"])
+    detail = rpc(f"{tab}.show", id=item["id"])
     opening, revised = detail["comments"]
-    assert opening["author"] == detail["pull_request"]["author"]
+    assert opening["author"] == detail["pull_request" if tab == "pulls" else "issue"]["author"]
     assert (revised["author"], revised["created_at"], revised["text"]) == (author, date, "Revised")

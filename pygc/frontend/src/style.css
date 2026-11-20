@@ -231,13 +231,13 @@ button:disabled {
   opacity: 0.6;
 }
 
-.pr-title {
+.detail-title {
   margin: 0;
   padding: 1rem 1rem 0;
   line-height: 1.25;
 }
-.pr-meta,
-.pr-actions,
+.detail-meta,
+.detail-actions,
 .byline {
   display: flex;
   align-items: center;
@@ -245,16 +245,16 @@ button:disabled {
   gap: 0.5rem 1rem;
   overflow-wrap: anywhere;
 }
-.pr-meta,
+.detail-meta,
 .byline time {
   color: #59636e;
   font-size: 0.875rem;
 }
-.pr-actions {
+.detail-actions {
   margin: 1rem 0;
   gap: 0.5rem;
 }
-.pr-status {
+.detail-status {
   background: #e7f1eb;
   color: #214e34;
   border-radius: 1rem;

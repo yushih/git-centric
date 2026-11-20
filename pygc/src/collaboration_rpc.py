@@ -106,7 +106,7 @@ def collaboration_methods(directory: Path) -> dict[str, Callable[..., Any]]:
         def show(id: Identifier) -> Any:
             if pulls:
                 return result(lib.show_pull_request(id, directory, include_comment_origins=True))
-            return result(lib.show_issue(id, directory))
+            return result(lib.show_issue(id, directory, include_comment_origins=True))
 
         def add(id: Identifier, expectedTip: Tip, text: str, repliesTo: list[Identifier]) -> Any:
             target = PR_TITLE_SEPARATOR.join([id, *repliesTo])

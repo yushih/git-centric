@@ -104,3 +104,9 @@ Files changed navigation link. Keep stable IDs in routes and writes only.
 Render the opening message without a description label. Replies show the Git
 author and author timestamp of their creation, including after edits and PR
 renames. pulls.show adds author and created_at to each returned comment.
+
+Issue details share the PR title, status/action grouping and conversation
+presentation. Show Edit and Close/Reopen beside the issue state. The opening
+message is unlabeled. Replies show their original author and timestamp;
+secondary reply links use human-readable labels. issues.show includes author
+and created_at on each comment, following its stable ID through metadata history.

@@ -1,11 +1,19 @@
 """Shared conversation records, decoding, and immutable tree edits."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 
 from git import Repo
 
-from .constants import COMMENT_MAIN, COMMENT_PREFIX, GIT_REGULAR_FILE_MODE, PR_TITLE_SEPARATOR
-from .metadata import Entries, _blob, _identifier, _Problem, _reject
+from .constants import (
+    COMMENT_MAIN,
+    COMMENT_PREFIX,
+    GC_DIRECTORY,
+    GIT_REGULAR_FILE_MODE,
+    PR_TITLE_SEPARATOR,
+)
+from .initialization import _git
+from .metadata import Entries, _blob, _identifier, _Problem, _reject, _subtree, _tree
 from .result import FailureReason
 
 
@@ -122,3 +130,41 @@ def edit_comment(
     updated = replace(selected, text=text)
     entries[comment_filename(updated)] = _blob(repo, text)
     return updated, detached, True
+
+
+@dataclass(frozen=True, kw_only=True)
+class AttributedComment(Comment):
+    author: str
+    created_at: str
+
+
+def attributed_comments(
+    repo: Repo, tip: str, directory: str, matches: Callable[[str], bool], comments: list[Comment]
+) -> list[AttributedComment]:
+    """Locate creation commits by stable identities, independent of text and path renames."""
+    origins: dict[str, tuple[str, str]] = {}
+    remaining = {comment.id for comment in comments}
+    for oid in reversed(_git(repo, "rev-list", "--first-parent", tip).splitlines()):
+        gc = _subtree(repo, _tree(repo, oid), GC_DIRECTORY)
+        entries = _subtree(repo, gc, directory)
+        name = next((name for name in entries if matches(name)), None)
+        if name is None:
+            continue
+        ids = {
+            filename.removeprefix(COMMENT_PREFIX).partition(PR_TITLE_SEPARATOR)[0]
+            for filename in _subtree(repo, entries, name)
+            if filename.startswith(COMMENT_PREFIX)
+        }
+        added = remaining & ids
+        if added:
+            author, date = _git(repo, "show", "-s", "--format=%an <%ae>%n%aI", oid).splitlines()
+            origins.update((key, (author, date)) for key in added)
+            remaining -= added
+            if not remaining:
+                break
+    return [
+        AttributedComment(
+            c.id, c.text, c.replies_to, author=origins[c.id][0], created_at=origins[c.id][1]
+        )
+        for c in comments
+    ]

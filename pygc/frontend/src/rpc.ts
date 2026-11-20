@@ -265,10 +265,9 @@ export async function call<K extends keyof Methods>(
         !v.comments.every(
           (c) =>
             comment(c) &&
-            (!pulls ||
-              (record(c) &&
-                typeof c.author === "string" &&
-                typeof c.created_at === "string")),
+            record(c) &&
+            typeof c.author === "string" &&
+            typeof c.created_at === "string",
         )
       )
         return false;

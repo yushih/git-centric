@@ -18,7 +18,14 @@ from .constants import (
     ISSUE_DIRECTORY,
     ISSUE_TITLE_SEPARATOR,
 )
-from .conversations import Comment, append_comment, edit_comment, read_comments, validate_cycles
+from .conversations import (
+    Comment,
+    append_comment,
+    attributed_comments,
+    edit_comment,
+    read_comments,
+    validate_cycles,
+)
 from .ids import generate_id
 from .initialization import _branch_oid, _failure, _git, _has_gc_directory
 from .metadata import (
@@ -262,14 +269,29 @@ def list_issues(filters: Sequence[str] = (), directory: str | Path = ".") -> Res
     return _run(directory, listing)
 
 
-def show_issue(identifier: str, directory: str | Path = ".") -> Result[IssueDetails]:
+def show_issue(
+    identifier: str, directory: str | Path = ".", *, include_comment_origins: bool = False
+) -> Result[IssueDetails]:
     """Read issue fields and complete conversation from the same snapshot."""
 
     def show(store: _Store) -> IssueDetails:
         name, issue = store.get(identifier)
-        author, date = store.origins()[identifier]
+        comments = store.comments(name)
+        if include_comment_origins:
+            attributed = attributed_comments(
+                store.repo,
+                store.oid,
+                ISSUE_DIRECTORY,
+                lambda name: _parse(name).id == identifier,
+                comments,
+            )
+            opening = next(c for c in attributed if c.id == COMMENT_MAIN)
+            author, date = opening.author, opening.created_at
+            comments = list(attributed)
+        else:
+            author, date = store.origins()[identifier]
         return IssueDetails(
-            replace(issue, author=author, created_at=date), tuple(store.comments(name)), store.oid
+            replace(issue, author=author, created_at=date), tuple(comments), store.oid
         )
 
     return _run(directory, show)
