@@ -1,7 +1,60 @@
-Git-centric (GC thereafter) is a decentralized local-first code forge to support the familiar git workflows without depending on centralized git hosting platforms (CG thereafter). The design goal of GC is low migration friction from CG.
+# :tada: :tada: :tada: Git-centric has achieved bootstrapping! Further development happens on Git-centric.
+
+To report bugs, request features or contribute code, please use Git-centric, see the [Using the CLI](#using-the-cli) and [Using the Web interface](#using-the-web-interface) sections.
+
+## Overview
+
+Git-centric (GC thereafter) is a modestly decentralized local-first code forge to support the familiar git workflows without depending on centralized code forge platforms (CG thereafter). It is modestly decentralized to aim for zero friction migration from CG while being 100% available.
+
+## Architecture
+GC achieves its goal of being modestly decentralized, deadly simple and crazily extensible by piggybacking the workflow data on git itself, contrasting CG's approach of storing them in privately managed databases.
+
+```mermaid
+graph TB
+    subgraph leftPanel ["Git-centric"]
+         
+        subgraph repo1 ["git repo "]
+            code1["code"]
+            workflow1["workflow data"]
+        end
+         
+        subgraph repo2 ["git repo "]
+            code2["code"]
+            workflow2["workflow data"]
+        end
+        
+        subgraph repo3 ["git repo "]
+            code3["code"]
+            workflow3["workflow data"]
+        end
+        repo1 ---|replicate| repo2
+        repo2 ---|replicate| repo3
+        repo1 ---|replicate| repo3
+
+    end
+    subgraph rightPanel ["Centralized code forge"]
+        
+        subgraph codeForge_sub ["git repo "]
+            
+                codeRight["code"]
+             
+        end
+        workflowDataRight["workflow data"]
+    end
+```
+
+Two example deployment scenarios:
+
+1. Conservatively decentralized, just want business continuity when the CG is unavailable.
+
+In this case, use GC with 8 CG providers. There is no setup cost. Unless all of them go down, you are good. And even if they do, you are most likely unscathed, because you automatically fall back to scenario 2:
+
+2. More radically decentralized, but don't want any learning curve when migrating from the good old CG
+
+In this case, the developer machines in your intranet form a replicating network for workflow data. The team is globally distributed? Use Tailscale, NetBird or ZeroTier. The project accepts outside/external/community/volunteer contribution? Just set up a repo in one CG as an ordinary node of your GC network. The CG repo serves as a gateway for external contributors to access your workflow.
 
 GC has a 3 layer architecture:
-1. Layer 1 (L1 thereafter) is the data format layer consisting of definitions of directory structures and file formats.
+1. Layer 1 (L1 thereafter) is the data format layer consisting of definitions of directory structures and file formats. [Here is a working instance](/yushih/git-centric/tree/__git-centric__).
 2. Layer 2 is the reference implementation. Currently, there is a Python based CLI implementation in [pygc/src](pygc/src). This is meant to be used by CLI lovers, CI/CD tools and agents.
 3. Layer 3 is the reference Web shell on top of layer 2 to expose the familiar Web UI. You can run the Web server on localhost and work on your git repo in your browser.
 
@@ -11,35 +64,7 @@ Also, there is simple gossip protocol to support decentralization.
 1. the evolving history left by the workflow is preserved, instead of only the history of code changes.
 2. open source, self-hosted and super simple design.
 3. therefore, extendable. These days everybody wants to extend their system with agentic AI. GC doesn't get in the way.
-
-
-## Using the CLI
-
-See [installation and setup](pygc/README.md#requirements-and-setup) to install
-`gc`. With the Python environment active, run the commands below directly;
-otherwise use `uv run gc` from `pygc/`.
-
-```sh
-gc help                  # list commands
-gc pr --help             # list pull request commands
-gc issue --help          # list issue commands
-gc comment --help        # list comment commands
-gc pr show --help        # get help for a specific command
-```
-
-Repository commands use the current directory by default. To select another
-repository, add `--repo-dir=/path/to/repo` after the command:
-
-```sh
-gc init --repo-dir=/path/to/repo
-gc pr list --repo-dir=/path/to/repo
-```
-
-If both locations are initialized but refer to different repositories, `gc`
-prints a warning and uses `--repo-dir`. Quote titles, comments and filter values
-that contain spaces. Pull request and comment commands output JSON by default;
-`gc pr show --text` provides a readable alternative.
-
+4. highly available, GC can replicate to infinitely many git nodes and as long as there is one node up, the git workflow can progress normally. There is no single point of failure.
 
 ## Fundamental data structure
 
@@ -52,7 +77,7 @@ creates one). Initialization preserves your current branch and working files.
 
 
 ## Pull requests
-(L1)In the "pull-requests" directory, each open pull request is represented by a directory named "c~>b#id:t", where c is the compare branch name, b is the base branch name, id is an unique id and t is the title. If the name is prefixed with the status flag "[closed]", it is closed. If c is an ancestor of b, the pull request is considered to have been merged. If the name is prefixed with the status flag "[draft]", it is a draft pull request. Draft/ready, open/closed, and merged/not merged are independent: all eight combinations are valid. Both stored flags may be present, written as "[closed][draft]"; merged is determined by ancestry regardless of these flags. The author of the pull requrest is the creator of the pull request directory as recorded in git. The creation time the pull request is the timestamp of the commit that creates the directory.
+(L1)In the "pull-requests" directory, each open pull request is represented by a directory named "c~>b#id:t", where c is the compare branch name, b is the base branch name, id is an unique id and t is the title. If the name is prefixed with the status flag "[closed]", it is closed. If c is an ancestor of b, the pull request is considered to have been merged. If the name is prefixed with the status flag "[draft]", it is a draft pull request. Draft/ready, open/closed, and merged/not merged are independent: all eight combinations are valid. Both stored flags may be present, written as "[closed][draft]"; merged is determined by ancestry regardless of these flags. The author of the pull request is the creator of the pull request directory as recorded in git. The creation time the pull request is the timestamp of the commit that creates the directory.
 
 (L2)To list pull requests, run
 
@@ -173,10 +198,15 @@ Previous contents remain available in Git history.
 
 ## Issues
 
-Issues track work independently of branches. Each issue has an immutable random
-ID, title, `closed` flag, original author, and creation timestamp. The description
-is its editable `main` comment. New issues are open; closing is reversible and
-still allows comments.
+(L1)Each issue is represented by a "<ID>:<encoded-title>" directory under the "issues/" directory.
+The directory name is prefixed with `[closed]` if the issue is closed.
+Titles use percent escaping.
+
+Each comment under the issue is file named "comment-<ID>[:<REPLY_ID>...]".
+The <ID> for the main content of the issue is "main". A comment can address zero or multiple <REPLY_ID>s.
+Creator and creation time come from first-parent Git history by stable ID, so
+
+(L2)
 
 ```sh
 gc issue new "Fix login" "Steps to reproduce"
@@ -197,35 +227,34 @@ gc issue comment delete ISSUE_ID:COMMENT_ID
 gc issue --help
 ```
 
-Omitting the description creates an empty `main` comment. Filters combine with
-AND: `open`, `closed`, `mine`, `author=`, and `title=REGEX`. Author matches a name,
-email, or full Git identity; `mine` matches the current Git author email. Updates
-accept `title=`, `close`, and `reopen`. Unknown/repeated tokens, contradictory
-states, blank titles, and invalid regular expressions fail without writing.
-All leaf commands accept `--repo-dir PATH`; text containing spaces must be quoted.
-Commands output JSON by default; `show --text` provides a readable conversation.
+## Using the CLI
 
-Issue comments use the same threaded model as PR comments. Multiple reply targets
-are supported as `ISSUE_ID:COMMENT_ID:OTHER_ID`. Text and trailing newlines are
-preserved; `@-` reads stdin for creation and comment add/update. Deleting a comment
-keeps replies and removes their links to it. `main` cannot be deleted; clear it
-with `gc issue comment update ISSUE_ID:main ""`. Existing `gc comment` commands
-continue to address PRs.
+See [installation and setup](pygc/README.md#requirements-and-setup) to install
+`gc`. With the Python environment active, run the commands below directly;
+otherwise use `uv run gc` from `pygc/`.
 
-Issues are stored on the existing `__git-centric__` branch under
-`__git-centric__/issues/ID:encoded-title/`, prefixed with `[closed]` when closed.
-Titles use percent escaping; comment blobs use `comment-ID[:REPLY_ID...]` names.
-Creator and creation time come from first-parent Git history by stable ID, so
-renaming or closing retains them. Existing initialized repositories need no
-migration. Writes preserve the checkout, index, PRs, and unrelated metadata.
-Concurrent publication fails instead of overwriting another writer; retry with a
-fresh operation. No-op updates create no commit. Any local Git author can edit;
-previous content remains in history.
+```sh
+gc help                  # list commands
+gc pr --help             # list pull request commands
+gc issue --help          # list issue commands
+gc comment --help        # list comment commands
+gc pr show --help        # get help for a specific command
+```
 
-Issues are available through Python and the CLI. Labels, assignees, milestones,
-PR linking, issue deletion, and issue RPC/web UI are not implemented.
+Repository commands use the current directory by default. To select another
+repository, add `--repo-dir=/path/to/repo` after the command:
 
-## Web interface
+```sh
+gc init --repo-dir=/path/to/repo
+gc pr list --repo-dir=/path/to/repo
+```
+
+If both locations are initialized but refer to different repositories, `gc`
+prints a warning and uses `--repo-dir`. Quote titles, comments and filter values
+that contain spaces. Pull request and comment commands output JSON by default;
+`gc pr show --text` provides a readable alternative.
+
+## Using the Web interface
 
 ```sh
 gc web
