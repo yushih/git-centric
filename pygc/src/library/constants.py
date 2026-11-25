@@ -29,3 +29,6 @@ ISSUE_TITLE_SEPARATOR = ":"
 
 NODES_DIRECTORY = "nodes"
 NODE_URL_FILE = "URL"
+
+GIT_NOTES_REF = "refs/notes/commits"
+FINALIZE_TEMP_PREFIX = "refs/notes/gc-finalize-"

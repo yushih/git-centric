@@ -13,6 +13,7 @@ evidence. This workflow is local Markdown and requires no external SDD tooling.
 | [features/003-issues.md](features/003-issues.md) | Issue fields, storage, commands, and implementation plan | Verified; see feature evidence |
 | [features/004-web-interface.md](features/004-web-interface.md) | Repository web interface, collaboration workflows and Git APIs | Implemented |
 | [features/005-nodes.md](features/005-nodes.md) | Register and list participating nodes | See feature evidence |
+| [features/006-finalization.md](features/006-finalization.md) | Finalize metadata with participating nodes | See feature evidence |
 | [templates/change.md](templates/change.md) | Spec, plan, task, and evidence template for new work | Reusable template |
 
 The baseline captures the session's decisions and current implementation. It does

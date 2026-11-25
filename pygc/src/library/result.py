@@ -21,6 +21,7 @@ class FailureReason(StrEnum):
     NOT_A_REPOSITORY = "not_a_repository"
     ALREADY_INITIALIZED = "already_initialized"
     BRANCH_CONFLICT = "branch_conflict"
+    CONFLICT_CHANGE = "conflict_change"
     GIT_ERROR = "git_error"
     IO_ERROR = "io_error"
     UNEXPECTED_ERROR = "unexpected_error"

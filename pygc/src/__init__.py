@@ -9,6 +9,7 @@ from .library import (
     initialize_gc,
     is_gc_initialized,
 )
+from .library.consensus import Finalization, finalize
 from .library.issues import (
     Issue,
     IssueDetails,
@@ -40,6 +41,8 @@ from .library.pull_requests import (
 from .library.repository import RepositoryContext, get_repository
 
 __all__ = [
+    "Finalization",
+    "finalize",
     "Node",
     "add_node",
     "list_nodes",

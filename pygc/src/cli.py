@@ -136,6 +136,20 @@ def _output(result: library.Result[object]) -> None:
             )
 
 
+consensus_app = typer.Typer(no_args_is_help=True, help="Finalize Git-centric metadata with peers.")
+app.add_typer(consensus_app, name="consensus")
+
+
+@consensus_app.command("finalize")
+def consensus_finalize(repo_dir: RepoDir = None) -> None:
+    """Push metadata to registered nodes, reconcile histories and report finality."""
+    result = library.finalize(_directory(repo_dir))
+    if isinstance(result, library.Success):
+        for warning in result.value.warnings:
+            typer.echo(f"Warning: {warning}", err=True)
+    _output(result)
+
+
 node_app = typer.Typer(no_args_is_help=True, help="Register and list participating repositories.")
 app.add_typer(node_app, name="node")
 

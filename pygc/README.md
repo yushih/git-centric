@@ -131,6 +131,21 @@ Registration stores the endpoint locally on the metadata branch under
 `__git-centric__/nodes/NAME/URL`. The Python equivalents are `add_node` and
 `list_nodes`.
 
+### Finalize metadata
+
+Run `gc consensus finalize` to push the local metadata branch to registered
+nodes. Use `--repo-dir PATH` to select the repository. Git 2.38+ supports
+checkout-free reconciliation of divergent histories. A clean local merge counts
+as a successful vote and subsequent peers receive its tip.
+
+The command prints JSON containing `finalized`, `tip`, `successful`, `conflicts`
+and `warnings`. Peer warnings also appear on stderr. A strict majority of
+successful nodes finalizes the round and sends conflict notes to dissenting
+peers. A strict conflict majority exits 1 with `conflict_change`. Otherwise,
+including an empty registry, the command exits 0 with `finalized: false`
+and records a local Git note. Inspect it with `git notes show __git-centric__`.
+A later run starts from current metadata and can retry incomplete propagation.
+
 ### Pull requests and conversations
 
 Run `gc init` first. All supplied branch names must identify existing local

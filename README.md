@@ -279,7 +279,7 @@ GC substitutes consistency for mergability. Although not strictly a CRDT, the da
 ```gc node add <name> <URL>``` add a node <name> at <URL>
 ```gc node list``` list nodes
 
-(L1)The finalize procedure is:
+(L1)The finalization procedure is:
 
 conflictNodeSet = {}
 successNodeSet = {}
@@ -315,7 +315,7 @@ else:
   warn: "no finality"
 
 (L2)
-```gc consensus finalize```: run the finalize procedure
+```gc consensus finalize```: run the finalization procedure
 
 TODO
 ```gc merge <pr>```
