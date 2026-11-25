@@ -4,7 +4,7 @@ To report bugs, request features or contribute code, please use Git-centric, see
 
 ## Overview
 
-Git-centric (GC thereafter) is a modestly decentralized local-first code forge to support the familiar git workflows without depending on centralized code forge platforms (CG thereafter). It is modestly decentralized to aim for zero friction migration from CG while being 100% available.
+Git-centric (GC thereafter) is a modestly decentralized local-first platform to support the familiar git workflows without depending on centralized code forge platforms (CG thereafter). It is modestly decentralized to aim for zero friction migration from CG while being 100% available.
 
 ## Architecture
 GC achieves its goal of being modestly decentralized, deadly simple and crazily extensible by piggybacking the workflow data on git itself, contrasting CG's approach of storing them in privately managed databases.
@@ -268,3 +268,54 @@ first. The Code tab shows the selected branch, latest commit, and committed file
 Use the breadcrumbs to browse directories or History to inspect earlier revisions.
 Issues and Pull requests support creation, editing, and threaded conversations.
 Open Files changed on a pull request to review patches and merge conflicts.
+
+## Consensus protocol
+
+GC substitutes consistency for mergability. Although not strictly a CRDT, the data formats are designed to reduce the likehood of conflict. GC maintains the list of participating nodes. Each workflow action first result in a local commit. The commit is then first optimistically pushed to every other participating nodes. If all pushes succeeds, then we are good. If some nodes are unreachable, or reject the push because there are new local update, the local node tries to reconcile.
+
+(L1)The node list is in the __git-centric__/nodes/ directory of the __git-centric__ branch. Each node is represented by a directory, the directory name is the node name. In the node directory, the file "URL" contains the URL of the node.
+
+(L2)
+```gc node add <name> <URL>``` add a node <name> at <URL>
+```gc node list``` list nodes
+
+The push procedure is:
+
+conflictNodeSet = {}
+successNodeSet = {}
+successCount = 0
+For each node in the node list:
+  push
+  if success:
+    add node to successNodeSet
+    sucessCount += 1
+  else if rejected:
+    pull from __git_centric__ branch from node
+    if successfully merge node/__git_centric__ branch into local __git_centric__ branch:
+      add node to successNodeSet
+      successCount += 1
+    else:
+      add node to conflictNodeSet
+      print "conflict with node" warning
+  else:
+    print node unreachable warning
+
+half = floor(totalNodeCount / 2):
+if successCount > half:
+  for each node in conflictNodeSet:
+    fetch __git-centric__ branch from node
+    add a note "conflict: <node list>" to the remote branch, where <node list> is successNodeSet
+    push the note to node
+    if the above is unsuccessful, warn and continue
+  return success
+else if count(conflictNodeSet) > half:
+  error: "conflict change"
+else:
+  add a "not finalized" git note to the head commit of __git-centric__ branch
+  warn: "no finality"
+
+
+TODO
+```gc merge <pr>```
+--do-not-finalize
+
