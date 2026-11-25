@@ -136,6 +136,22 @@ def _output(result: library.Result[object]) -> None:
             )
 
 
+node_app = typer.Typer(no_args_is_help=True, help="Register and list participating repositories.")
+app.add_typer(node_app, name="node")
+
+
+@node_app.command("add")
+def node_add(name: str, url: str, repo_dir: RepoDir = None) -> None:
+    """Register NAME with its Git URL or local path."""
+    _output(library.add_node(name, url, _directory(repo_dir)))
+
+
+@node_app.command("list")
+def node_list(repo_dir: RepoDir = None) -> None:
+    """List registered nodes by name as JSON."""
+    _output(library.list_nodes(_directory(repo_dir)))
+
+
 def _text(value: str) -> str:
     import sys
 

@@ -279,7 +279,7 @@ GC substitutes consistency for mergability. Although not strictly a CRDT, the da
 ```gc node add <name> <URL>``` add a node <name> at <URL>
 ```gc node list``` list nodes
 
-The push procedure is:
+(L1)The finalize procedure is:
 
 conflictNodeSet = {}
 successNodeSet = {}
@@ -314,6 +314,8 @@ else:
   add a "not finalized" git note to the head commit of __git-centric__ branch
   warn: "no finality"
 
+(L2)
+```gc consensus finalize```: run the finalize procedure
 
 TODO
 ```gc merge <pr>```

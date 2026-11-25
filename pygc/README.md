@@ -115,6 +115,22 @@ Failure reasons are `not_a_repository`, `already_initialized`, `branch_conflict`
 `unexpected_error`. Existing branches are never overwritten. CLI failures print
 the reason and detail to stderr and exit with status 1.
 
+### Participating nodes
+
+After `gc init`, register a Git endpoint and list the repository's nodes:
+
+```sh
+gc node add office git@example.org:team/project.git
+gc node list
+```
+
+Add prints a JSON object with `name` and `url`. Names are unique, and a repeated
+name fails without changing its URL. List prints a JSON array ordered by name,
+or `[]` for an empty registry. Both commands accept `--repo-dir PATH`.
+Registration stores the endpoint locally on the metadata branch under
+`__git-centric__/nodes/NAME/URL`. The Python equivalents are `add_node` and
+`list_nodes`.
+
 ### Pull requests and conversations
 
 Run `gc init` first. All supplied branch names must identify existing local

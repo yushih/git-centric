@@ -21,6 +21,7 @@ from .library.issues import (
     update_issue,
     update_issue_comment,
 )
+from .library.nodes import Node, add_node, list_nodes
 from .library.pull_requests import (
     Comment,
     FileChange,
@@ -39,6 +40,9 @@ from .library.pull_requests import (
 from .library.repository import RepositoryContext, get_repository
 
 __all__ = [
+    "Node",
+    "add_node",
+    "list_nodes",
     "RepositoryContext",
     "get_repository",
     "Issue",

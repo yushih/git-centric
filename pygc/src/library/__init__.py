@@ -16,6 +16,7 @@ from .issues import (
     update_issue,
     update_issue_comment,
 )
+from .nodes import Node, add_node, list_nodes
 from .pull_requests import (
     Comment,
     FileChange,
@@ -35,6 +36,9 @@ from .repository import RepositoryContext, get_repository
 from .result import Failure, FailureReason, Result, Success
 
 __all__ = [
+    "Node",
+    "add_node",
+    "list_nodes",
     "RepositoryContext",
     "get_repository",
     "Issue",
