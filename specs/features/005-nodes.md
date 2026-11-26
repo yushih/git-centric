@@ -39,3 +39,11 @@ publication (test_node_race).
 NODE-005: update-url NAME URL checks the new URL with the existing node ID;
 remove NAME checks the stored URL with that ID. Return the updated or removed
 node. Missing records fail with not_found. Identical URL updates create no commit.
+
+NODE-006: The Nodes repository tab (#nodes) lists the sorted registry, registers
+a name and URL, edits a named node's URL, and confirms removal. nodes.list({})
+returns {metadata_tip, nodes} from one snapshot. nodes.add and nodes.change_url
+accept name, url and expectedTip; nodes.remove accepts name and expectedTip.
+Mutations return the Node, enforce local-write and domain policy checks, and
+reject stale snapshots. Preserve drafts on failure and schedule web finalization
+after confirmed success.

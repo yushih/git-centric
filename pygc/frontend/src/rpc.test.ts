@@ -123,3 +123,13 @@ it("rejects malformed memberships in access snapshots and write results", async 
   await expect(call("access.roles.assign", { user: "*", role: "ci", expectedTip: tip }))
     .rejects.toThrow("Invalid JSON-RPC result");
 });
+
+it("rejects node lists containing an incomplete endpoint", async () => {
+  vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+    const { id } = JSON.parse(init.body as string);
+    return Response.json({ jsonrpc: "2.0", id, result: {
+      metadata_tip: "a".repeat(40), nodes: [{ name: "office" }],
+    } });
+  });
+  await expect(call("nodes.list", {})).rejects.toThrow("Invalid JSON-RPC result");
+});

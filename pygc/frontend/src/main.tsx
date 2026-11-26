@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { call, type Source } from "./rpc";
 import "./style.css";
 import { FinalizationPanel, useFinalization } from "./Finalization";
+import { Nodes } from "./Nodes";
 import { Access } from "./Access";
 import { Collaboration } from "./Collaboration";
 
@@ -228,7 +229,7 @@ function App() {
           setName(s.name);
           setSource(s);
         }
-      } else if (tab !== "issues" && tab !== "pulls" && tab !== "access")
+      } else if (tab !== "issues" && tab !== "pulls" && tab !== "access" && tab !== "nodes")
         throw Error("Unknown page");
     }
     load()
@@ -254,6 +255,7 @@ function App() {
             ["issues", "Issues"],
             ["pulls", "Pull requests"],
             ["access", "Access"],
+            ["nodes", "Nodes"],
           ].map(([tab, label]) => (
             <a
               key={tab}
@@ -266,7 +268,9 @@ function App() {
         </nav>
       </header>
       <main>
-        {route.tab === "access" ? (
+        {route.tab === "nodes" ? (
+          <Nodes onName={setName} onSaved={finalization.trigger} />
+        ) : route.tab === "access" ? (
           <Access usersView={new URLSearchParams(location.hash.split("?")[1]).get("view") === "users"} onName={setName} onSaved={finalization.trigger} />
         ) : route.tab === "issues" || route.tab === "pulls" ? (
           <Collaboration

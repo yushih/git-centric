@@ -268,6 +268,7 @@ first. The Code tab shows the selected branch, latest commit, and committed file
 Use the breadcrumbs to browse directories or History to inspect earlier revisions.
 Issues and Pull requests support creation, editing, and threaded conversations.
 Open Files changed on a pull request to review patches and merge conflicts.
+Open Nodes to list participating Git endpoints, add a node, edit its URL, or remove it.
 
 ## Consensus protocol
 

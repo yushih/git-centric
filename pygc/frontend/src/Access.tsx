@@ -1,7 +1,9 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { call, RpcError, type AccessRole, type AccessSnapshot } from "./rpc";
+import { useState, type FormEvent } from "react";
+import { call, type AccessRole, type AccessSnapshot } from "./rpc";
 
-type Save = (operation: () => Promise<unknown>, clear?: () => void) => Promise<void>;
+import { useRegistry, type Save } from "./useRegistry";
+
+const readAccess = () => call("access.get", {});
 
 function RoleRow({role, snapshot, save}: {role: AccessRole; snapshot: AccessSnapshot; save: Save}) {
   const [target, select] = useState("");
@@ -41,68 +43,15 @@ function RoleRow({role, snapshot, save}: {role: AccessRole; snapshot: AccessSnap
 export function Access({usersView, onName, onSaved}: {
   usersView: boolean; onName: (name: string) => void; onSaved: () => void;
 }) {
-  const [snapshot, setSnapshot] = useState<AccessSnapshot | null>(null);
-  const [setup, setSetup] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [review, setReview] = useState(false);
-  const [error, setError] = useState("");
-  const [version, setVersion] = useState(0);
+  const {snapshot, setup, loading, saving, review, error, save, reload} =
+    useRegistry(readAccess, onName, onSaved, {
+      invalid_argument: "Check the name, public key, or role membership and try again.",
+      not_found: "The selected user or role could not be found.",
+    });
   const [roleName, setRoleName] = useState("");
   const [metadata, setMetadata] = useState("");
   const [userName, setUserName] = useState("");
   const [key, setKey] = useState("");
-  function reload() {
-    setLoading(true);
-    setVersion(n => n + 1);
-  }
-  useEffect(() => {
-    let active = true;
-    async function load() {
-      const context = await call("repo.get", {});
-      if (!active) return;
-      onName(context.name);
-      const registry = context.initialized ? await call("access.get", {}) : null;
-      if (!active) return;
-      setSetup(!context.initialized);
-      setSnapshot(registry);
-      setReview(false);
-      setError("");
-    }
-    load().catch(() => {
-      if (active) {
-        setReview(true);
-        setError("Could not load access records. Reload to try again.");
-      }
-    }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [version, onName]);
-
-  const save: Save = async (operation, clear) => {
-    if (loading || saving || review) return;
-    setSaving(true);
-    setError("");
-    try {
-      await operation();
-      onSaved();
-      clear?.();
-      reload();
-    } catch (e) {
-      const reason = e instanceof RpcError ? e.reason : undefined;
-      const messages: Record<string, string> = {
-        stale_snapshot: "Repository records changed. Reload and review your changes before saving.",
-        already_initialized: "Another session initialized this repository. Reload to see its records.",
-        id_conflict: "That name is already registered.",
-        invalid_argument: "Check the name, public key, or role membership and try again.",
-        not_found: "The selected user or role could not be found.",
-      };
-      setReview(!reason || reason === "stale_snapshot" || reason === "already_initialized");
-      setError(reason ? messages[reason] || `Access operation failed (${reason}).` :
-        "Could not confirm the operation. Reload to check the repository before trying again.");
-    } finally {
-      setSaving(false);
-    }
-  };
   function create(event: FormEvent) {
     event.preventDefault();
     if (!snapshot) return;

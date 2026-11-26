@@ -11,6 +11,7 @@ from pydantic import ConfigDict, Field, validate_call
 
 from . import library as lib
 from .library.constants import GC_BRANCH, PR_TITLE_SEPARATOR
+from .library.nodes import get_node_snapshot
 
 Identifier = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]+$")]
 Tip = Annotated[str, Field(pattern=r"^(?:[a-f0-9]{40}|[a-f0-9]{64})$")]
@@ -95,7 +96,23 @@ def collaboration_methods(directory: Path) -> dict[str, Callable[..., Any]]:
     def role_unassign(user: str, role: str, expectedTip: Tip) -> Any:
         return result(lib.unassign_role(user, role, directory, expected_tip=expectedTip))
 
+    def nodes_list() -> Any:
+        return result(get_node_snapshot(directory))
+
+    def node_add(name: str, url: str, expectedTip: Tip) -> Any:
+        return result(lib.add_node(name, url, directory, expected_tip=expectedTip))
+
+    def node_change(name: str, url: str, expectedTip: Tip) -> Any:
+        return result(lib.change_node_url(name, url, directory, expected_tip=expectedTip))
+
+    def node_remove(name: str, expectedTip: Tip) -> Any:
+        return result(lib.remove_node(name, directory, expected_tip=expectedTip))
+
     methods: dict[str, Callable[..., Any]] = {
+        "nodes.list": checked(nodes_list),
+        "nodes.add": checked(node_add),
+        "nodes.change_url": checked(node_change),
+        "nodes.remove": checked(node_remove),
         "access.get": checked(access_get),
         "access.users.add": checked(user_add),
         "access.roles.create": checked(role_create),

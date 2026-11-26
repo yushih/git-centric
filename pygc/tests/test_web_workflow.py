@@ -213,3 +213,38 @@ def test_access_snapshot_and_guarded_writes(repo, tmp_path):  # noqa: F811
             }
 
     asyncio.run(exercise())
+
+
+def test_node_registry_rpc(repo, monkeypatch):  # noqa: F811
+    # A browser's snapshot must guard deletion even if another client edits only the URL.
+    from pygc import Failure, FailureReason
+    from pygc.library import policy
+
+    methods = repository_methods(repo)
+
+    def rpc(method, **params):
+        return dispatch(dict(jsonrpc="2.0", id=1, method=method, params=params), methods)
+
+    initial = rpc("repo.initialize")["result"]
+    assert rpc("nodes.list")["result"] == {"metadata_tip": initial, "nodes": []}
+    node = {"name": "office", "url": "local.git"}
+    assert rpc("nodes.add", **node, expectedTip=initial)["result"] == node
+    snapshot = rpc("nodes.list")["result"]
+    assert snapshot["nodes"] == [node]
+    mutation = {"name": "office", "url": "changed.git"}
+    assert (
+        rpc("nodes.change_url", **mutation, expectedTip=snapshot["metadata_tip"])["result"]
+        == mutation
+    )
+    assert rpc("nodes.remove", name="office", expectedTip=snapshot["metadata_tip"])["error"][
+        "data"
+    ] == {"reason": "stale_snapshot"}
+    current = git(repo, "rev-parse", GC_REF)
+    assert rpc("nodes.remove", name="office")["error"]["code"] == -32602
+    monkeypatch.setattr(
+        policy, "check_action", lambda _: Failure(FailureReason.ACCESS_DENIED, "keep")
+    )
+    assert rpc("nodes.remove", name="office", expectedTip=current)["error"]["data"] == {
+        "reason": "access_denied"
+    }
+    assert rpc("nodes.list")["result"] == {"metadata_tip": current, "nodes": [mutation]}

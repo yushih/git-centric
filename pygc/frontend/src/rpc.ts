@@ -122,7 +122,13 @@ type Conditional = { expectedTip: string };
 const accessUser = (v: unknown) => record(v) && typeof v.name === "string" && typeof v.public_key === "string";
 const accessRole = (v: unknown) => record(v) && typeof v.name === "string" && typeof v.metadata === "string" && strings(v.users);
 
-type Methods = Endpoint<"access.get", Record<string, never>, AccessSnapshot> &
+export type RegistryNode = { name: string; url: string };
+export type NodeSnapshot = { metadata_tip: string; nodes: RegistryNode[] };
+const registryNode = (v: unknown) => record(v) && typeof v.name === "string" && typeof v.url === "string";
+type Methods = Endpoint<"nodes.list", Record<string, never>, NodeSnapshot> &
+  Endpoint<"nodes.add" | "nodes.change_url", Conditional & RegistryNode, RegistryNode> &
+  Endpoint<"nodes.remove", Conditional & { name: string }, RegistryNode> &
+  Endpoint<"access.get", Record<string, never>, AccessSnapshot> &
   Endpoint<"access.users.add", Conditional & { name: string; publicKey: string }, AccessUser> &
   Endpoint<"access.roles.create", Conditional & { name: string; metadata?: string }, AccessRole> &
   Endpoint<"access.roles.delete", Conditional & { name: string }, AccessRole> &
@@ -253,6 +259,10 @@ export async function call<K extends keyof Methods>(
     typeof c.text === "string" &&
     strings(c.replies_to);
   function validResult() {
+    if (method === "nodes.list")
+      return record(v) && typeof v.metadata_tip === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(v.metadata_tip)
+        && Array.isArray(v.nodes) && v.nodes.every(registryNode);
+    if (method.startsWith("nodes.")) return registryNode(v);
     if (method === "access.get")
       return record(v) && typeof v.metadata_tip === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(v.metadata_tip)
         && Array.isArray(v.users) && v.users.every(accessUser)

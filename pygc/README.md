@@ -153,6 +153,11 @@ the key and `gc access user delete NAME` to remove the user and their membership
 
 ### Participating nodes
 
+Open **Nodes** in the web UI to register a Git endpoint, edit its URL or path,
+or remove it. Names identify nodes and stay fixed. If another writer changes the
+repository, reload and review the saved endpoint alongside your draft. Each
+successful web change schedules a finalization round using the updated registry.
+
 After `gc init`, register a Git endpoint and list the repository's nodes:
 
 ```sh

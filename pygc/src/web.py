@@ -72,6 +72,7 @@ def create_app(static_dir: Path | None = None, *, directory: Path | None = None)
             return JSONResponse(error(-32700, "Parse error"))
         requests = payload if isinstance(payload, list) else [payload]
         read_methods = {
+            "nodes.list",
             "access.get",
             "repo.get",
             "code.browse",

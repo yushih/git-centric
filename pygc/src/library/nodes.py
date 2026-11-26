@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from git import Repo
+from git.exc import GitCommandError
 
 from . import policy
 from .constants import GC_DIRECTORY, GIT_REGULAR_FILE_MODE, NODE_URL_FILE, NODES_DIRECTORY
@@ -29,6 +30,12 @@ class Node:
     url: str
 
 
+@dataclass(frozen=True)
+class NodeSnapshot:
+    metadata_tip: str
+    nodes: list[Node]
+
+
 def _validate(node: Node, reason: FailureReason) -> None:
     # Names are literal tree components. Endpoints are opaque Git addresses.
     name = node.name
@@ -45,9 +52,12 @@ def _validate(node: Node, reason: FailureReason) -> None:
 
 
 class _Registry:
-    def __init__(self, repo: Repo):
+    def __init__(self, repo: Repo, expected_tip: str | None = None):
+        self.expected_tip = expected_tip
         self.repo = repo
         parent = _branch_oid(repo)
+        if expected_tip is not None and parent != expected_tip:
+            _reject(FailureReason.STALE_SNAPSHOT, "Reload the node registry")
         if parent is None or not _has_gc_directory(repo, parent):
             _reject(FailureReason.NOT_INITIALIZED, "Run gc init first")
         self.parent = parent
@@ -109,24 +119,33 @@ class _Registry:
             message,
         )
         # Publish against the snapshot we validated, preserving concurrent additions.
-        publish_commit(self.repo, commit, self.parent)
+        try:
+            publish_commit(self.repo, commit, self.parent)
+        except GitCommandError:
+            if self.expected_tip is not None and _branch_oid(self.repo) != self.parent:
+                _reject(FailureReason.STALE_SNAPSHOT, "Reload the node registry")
+            raise
 
 
-def _run[T](directory: str | Path, operation: Callable[[_Registry], T]) -> Result[T]:
+def _run[T](
+    directory: str | Path, operation: Callable[[_Registry], T], expected_tip: str | None = None
+) -> Result[T]:
     try:
         with Repo(
             Path(directory).absolute(), search_parent_directories=True, expand_vars=False
         ) as repo:
-            return Success(operation(_Registry(repo)))
+            return Success(operation(_Registry(repo, expected_tip)))
     except _Problem as exc:
         return Failure(exc.reason, str(exc))
     except Exception as exc:
         return _failure(exc)
 
 
-def add_node(name: str, url: str, directory: str | Path = ".") -> Result[Node]:
+def add_node(
+    name: str, url: str, directory: str | Path = ".", *, expected_tip: str | None = None
+) -> Result[Node]:
     """Register one uniquely named endpoint without contacting it."""
-    return _run(directory, lambda registry: registry.add(Node(name, url)))
+    return _run(directory, lambda registry: registry.add(Node(name, url)), expected_tip)
 
 
 def list_nodes(directory: str | Path = ".") -> Result[list[Node]]:
@@ -135,9 +154,18 @@ def list_nodes(directory: str | Path = ".") -> Result[list[Node]]:
     return _run(directory, lambda registry: registry.nodes)
 
 
-def change_node_url(name: str, url: str, directory: str | Path = ".") -> Result[Node]:
-    return _run(directory, lambda registry: registry.edit(name, url))
+def change_node_url(
+    name: str, url: str, directory: str | Path = ".", *, expected_tip: str | None = None
+) -> Result[Node]:
+    return _run(directory, lambda registry: registry.edit(name, url), expected_tip)
 
 
-def remove_node(name: str, directory: str | Path = ".") -> Result[Node]:
-    return _run(directory, lambda registry: registry.edit(name, None))
+def remove_node(
+    name: str, directory: str | Path = ".", *, expected_tip: str | None = None
+) -> Result[Node]:
+    return _run(directory, lambda registry: registry.edit(name, None), expected_tip)
+
+
+def get_node_snapshot(directory: str | Path = ".") -> Result[NodeSnapshot]:
+    """Capture the displayed endpoints and write precondition from one metadata revision."""
+    return _run(directory, lambda registry: NodeSnapshot(registry.parent, registry.nodes))
