@@ -1,0 +1,210 @@
+"""Snapshot-based user and role registry on the shared metadata branch."""
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+
+from git import Repo
+
+from .constants import (
+    ACCESS_DIRECTORY,
+    GC_DIRECTORY,
+    GIT_REGULAR_FILE_MODE,
+    PUBLIC_KEY_FILE,
+    ROLES_DIRECTORY,
+    USERS_DIRECTORY,
+)
+from .initialization import _branch_oid, _failure, _has_gc_directory
+from .keys import public_key
+from .metadata import (
+    Entries,
+    _blob,
+    _Problem,
+    _reject,
+    _subtree,
+    _tree,
+    _write_tree,
+    prepare_commit,
+    publish_commit,
+)
+from .result import Failure, FailureReason, Result, Success
+
+
+@dataclass(frozen=True)
+class User:
+    name: str
+    public_key: str
+
+
+@dataclass(frozen=True)
+class Role:
+    name: str
+    metadata: str
+    users: list[str]
+
+
+def validate_name(name: str, reason: FailureReason = FailureReason.INVALID_ARGUMENT) -> None:
+    if (
+        not name.strip()
+        or not name.isprintable()
+        or "/" in name
+        or "\\" in name
+        or name.lower() in {".", "..", ".git", "*"}
+    ):
+        _reject(reason, f"Invalid user or role name: {name!r}")
+
+
+def user_tree(repo: Repo, key: str) -> Entries:
+    return {PUBLIC_KEY_FILE: _blob(repo, key + "\n")}
+
+
+class _Registry:
+    def __init__(self, repo: Repo):
+        self.repo = repo
+        parent = _branch_oid(repo)
+        if parent is None or not _has_gc_directory(repo, parent):
+            _reject(FailureReason.NOT_INITIALIZED, "Run gc init first")
+        self.parent = parent
+        self.root = _tree(repo, parent)
+        self.gc = _subtree(repo, self.root, GC_DIRECTORY)
+        self.access = _subtree(repo, self.gc, ACCESS_DIRECTORY)
+        self.roles = _subtree(repo, self.access, ROLES_DIRECTORY)
+        self.users = _subtree(repo, self.access, USERS_DIRECTORY)
+        self.keys: dict[str, str] = {}
+        self.metadata: dict[str, str] = {}
+        self.members: dict[str, list[str]] = {}
+        for role in sorted(self.roles):
+            validate_name(role, FailureReason.INVALID_METADATA)
+            self.metadata[role] = self.text(self.roles, role)
+            self.members[role] = []
+        for user in sorted(self.users):
+            validate_name(user, FailureReason.INVALID_METADATA)
+            entry = _subtree(repo, self.users, user)
+            try:
+                self.keys[user] = public_key(self.text(entry, PUBLIC_KEY_FILE))
+            except ValueError as exc:
+                _reject(FailureReason.INVALID_METADATA, str(exc))
+            memberships = _subtree(repo, entry, ROLES_DIRECTORY)
+            for role in memberships:
+                if role not in self.roles or self.text(memberships, role) != "":
+                    _reject(FailureReason.INVALID_METADATA, f"Invalid membership: {user}, {role}")
+                self.members[role].append(user)
+
+    def text(self, entries: Entries, name: str) -> str:
+        entry = entries.get(name)
+        if not entry or entry[:2] != (GIT_REGULAR_FILE_MODE, "blob"):
+            _reject(FailureReason.INVALID_METADATA, f"Expected regular file: {name}")
+        try:
+            data: bytes = self.repo.odb.stream(bytes.fromhex(entry[2])).read()
+            return data.decode()
+        except UnicodeDecodeError:
+            _reject(FailureReason.INVALID_METADATA, f"Invalid UTF-8: {name}")
+
+    def save(self, name: str, entries: Entries, message: str) -> None:
+        self.access[name] = _write_tree(self.repo, entries)
+        commit = prepare_commit(
+            self.repo, self.root, self.gc, self.access, ACCESS_DIRECTORY, self.parent, message
+        )
+        publish_commit(self.repo, commit, self.parent)
+
+    def add(self, name: str, key: str) -> User:
+        validate_name(name)
+        if name in self.users:
+            _reject(FailureReason.ID_CONFLICT, f"User already exists: {name}")
+        try:
+            key = public_key(key)
+        except ValueError as exc:
+            _reject(FailureReason.INVALID_ARGUMENT, str(exc))
+        self.users[name] = _write_tree(self.repo, user_tree(self.repo, key))
+        self.save(USERS_DIRECTORY, self.users, f"register user {name}")
+        return User(name, key)
+
+    def role(self, name: str) -> Role:
+        validate_name(name)
+        if name not in self.roles:
+            _reject(FailureReason.NOT_FOUND, f"Unknown role: {name}")
+        return Role(name, self.metadata[name], self.members[name])
+
+    def create(self, name: str, metadata: str) -> Role:
+        validate_name(name)
+        if name in self.roles:
+            _reject(FailureReason.ID_CONFLICT, f"Role already exists: {name}")
+        self.roles[name] = _blob(self.repo, metadata)
+        self.save(ROLES_DIRECTORY, self.roles, f"create role {name}")
+        return Role(name, metadata, [])
+
+    def delete(self, name: str) -> Role:
+        role = self.role(name)
+        if role.users:
+            _reject(FailureReason.INVALID_ARGUMENT, f"Role has users: {name}")
+        del self.roles[name]
+        self.save(ROLES_DIRECTORY, self.roles, f"delete role {name}")
+        return role
+
+    def membership(self, user: str, name: str, assign: bool) -> Role:
+        role = self.role(name)
+        if user != "*":
+            validate_name(user)
+            if user not in self.users:
+                _reject(FailureReason.NOT_FOUND, f"Unknown user: {user}")
+        members = set(role.users)
+        changed = []
+        for target in sorted(self.users) if user == "*" else [user]:
+            if (target in members) == assign:
+                continue
+            entry = _subtree(self.repo, self.users, target)
+            markers = _subtree(self.repo, entry, ROLES_DIRECTORY)
+            if assign:
+                markers[name] = _blob(self.repo, "")
+                members.add(target)
+            else:
+                del markers[name]
+                members.remove(target)
+            entry[ROLES_DIRECTORY] = _write_tree(self.repo, markers)
+            self.users[target] = _write_tree(self.repo, entry)
+            changed.append(target)
+        # Wildcards operate on the validated snapshot and publish in one ref update.
+        if changed:
+            verb = "assign" if assign else "unassign"
+            self.save(USERS_DIRECTORY, self.users, f"{verb} role {name}: {', '.join(changed)}")
+        return Role(name, role.metadata, sorted(members))
+
+
+def _run[T](directory: str | Path, operation: Callable[[_Registry], T]) -> Result[T]:
+    try:
+        with Repo(
+            Path(directory).absolute(), search_parent_directories=True, expand_vars=False
+        ) as repo:
+            return Success(operation(_Registry(repo)))
+    except _Problem as exc:
+        return Failure(exc.reason, str(exc))
+    except Exception as exc:
+        return _failure(exc)
+
+
+def add_user(name: str, public_key: str, directory: str | Path = ".") -> Result[User]:
+    return _run(directory, lambda r: r.add(name, public_key))
+
+
+def list_users(directory: str | Path = ".") -> Result[list[User]]:
+    return _run(directory, lambda r: [User(n, k) for n, k in r.keys.items()])
+
+
+def list_roles(directory: str | Path = ".") -> Result[list[Role]]:
+    return _run(directory, lambda r: [r.role(n) for n in r.metadata])
+
+
+def create_role(name: str, metadata: str = "", directory: str | Path = ".") -> Result[Role]:
+    return _run(directory, lambda r: r.create(name, metadata))
+
+
+def delete_role(name: str, directory: str | Path = ".") -> Result[Role]:
+    return _run(directory, lambda r: r.delete(name))
+
+
+def assign_role(user: str, role: str, directory: str | Path = ".") -> Result[Role]:
+    return _run(directory, lambda r: r.membership(user, role, True))
+
+
+def unassign_role(user: str, role: str, directory: str | Path = ".") -> Result[Role]:
+    return _run(directory, lambda r: r.membership(user, role, False))

@@ -32,3 +32,9 @@ NODE_URL_FILE = "URL"
 
 GIT_NOTES_REF = "refs/notes/commits"
 FINALIZE_TEMP_PREFIX = "refs/notes/gc-finalize-"
+
+ACCESS_DIRECTORY = "access-control"
+ROLES_DIRECTORY = "roles"
+USERS_DIRECTORY = "users"
+PUBLIC_KEY_FILE = "pk-Ed25519"
+PRIVATE_KEY_FILE = ".__git-centric__sk-Ed25519"

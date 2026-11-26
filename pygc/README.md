@@ -104,7 +104,7 @@ root-level `__git-centric__` **directory in its committed tree**. A file or
 symlink with that name, or an uncommitted directory, does not qualify.
 
 `initialize_gc` requires `Success(False)` and rechecks that precondition. It
-creates an orphan commit containing only an empty `__git-centric__/.gitkeep`.
+creates an orphan commit containing an empty `__git-centric__/.gitkeep` and the initial user’s public key.
 GitPython invokes `hash-object`, `mktree`, `commit-tree`, and an atomic
 `update-ref` create transaction. HEAD, the index, and worktree files stay intact.
 Failed publication can leave unreachable Git objects for garbage collection.
@@ -114,6 +114,28 @@ Failure reasons are `not_a_repository`, `already_initialized`, `branch_conflict`
 (including missing identity or a concurrent ref creation), `io_error`, and
 `unexpected_error`. Existing branches are never overwritten. CLI failures print
 the reason and detail to stderr and exit with status 1.
+
+### Users and roles
+
+Initialization uses OpenSSH `ssh-keygen` to create or reuse the owner-only private
+key `~/.__git-centric__sk-Ed25519`. It registers the Git author name and matching
+public key in the repository. Existing repositories can register users explicitly.
+
+```sh
+gc access user add Ada "$(cat ada.pub)"
+gc access user list
+gc access role create reviewer "Reviews proposed changes"
+gc access role assign Ada reviewer
+gc access role list
+gc access role unassign '*' reviewer
+gc access role delete reviewer
+```
+
+Quote `*` to select every currently registered user. A user can hold multiple roles.
+Delete (alias `remove`) requires an empty role. Role records contain `name`,
+`metadata` and sorted `users`. These commands manage records only. Python exports
+`add_user`, `list_users`, `create_role`, `list_roles`, `assign_role`, `unassign_role`,
+and `delete_role`, each accepting the optional `directory` argument.
 
 ### Participating nodes
 

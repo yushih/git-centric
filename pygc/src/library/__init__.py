@@ -3,6 +3,17 @@
 Git-centric operations return algebraic result values instead of throwing.
 """
 
+from .access import (
+    Role,
+    User,
+    add_user,
+    assign_role,
+    create_role,
+    delete_role,
+    list_roles,
+    list_users,
+    unassign_role,
+)
 from .consensus import Finalization, defer_finalization, finalize
 from .initialization import initialize_gc, is_gc_initialized
 from .issues import (
@@ -37,6 +48,15 @@ from .repository import RepositoryContext, get_repository
 from .result import Failure, FailureReason, Result, Success
 
 __all__ = [
+    "Role",
+    "User",
+    "add_user",
+    "list_users",
+    "create_role",
+    "list_roles",
+    "delete_role",
+    "assign_role",
+    "unassign_role",
     "Finalization",
     "defer_finalization",
     "finalize",

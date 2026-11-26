@@ -22,6 +22,7 @@ def git(directory: Path, *args: str) -> str:
 def isolated_git_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Never read or write the developer's identity, signing, or init defaults.
     # Explicit identity also lets these tests run on a fresh CI machine.
+    monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "no-global-config"))
     for role in ("AUTHOR", "COMMITTER"):
@@ -44,7 +45,9 @@ def assert_initial_commit(repo: Path, oid: str) -> None:
     # rev-list emits only the commit itself if and only if there are no parents.
     assert git(repo, "rev-list", "--parents", "-n", "1", GC_REF) == oid
     assert git(repo, "ls-tree", "--name-only", GC_REF) == GC_DIRECTORY
-    assert git(repo, "ls-tree", "-r", "--name-only", GC_REF) == f"{GC_DIRECTORY}/{GC_KEEP_FILE}"
+    assert git(repo, "ls-tree", "-r", "--name-only", GC_REF) == (
+        f"{GC_DIRECTORY}/{GC_KEEP_FILE}\n{GC_DIRECTORY}/access-control/users/GC tests/pk-Ed25519"
+    )
     assert git(repo, "show", f"{GC_REF}:{GC_DIRECTORY}/{GC_KEEP_FILE}") == ""
     assert is_gc_initialized(repo) == Success(True)
 

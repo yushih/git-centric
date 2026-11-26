@@ -12,12 +12,13 @@ from git import Git, Repo
 from git.exc import GitError, InvalidGitRepositoryError, NoSuchPathError
 
 from .constants import (
+    ACCESS_DIRECTORY,
     GC_DIRECTORY,
     GC_INITIAL_COMMIT_MESSAGE,
     GC_KEEP_FILE,
     GC_REF,
     GIT_DIRECTORY_MODE,
-    GIT_REGULAR_FILE_MODE,
+    USERS_DIRECTORY,
 )
 from .result import Failure, FailureReason, Result, Success
 
@@ -134,8 +135,8 @@ def initialize_gc(directory: str | Path = ".") -> Result[str]:
     be silently reset. Git's normal author/committer configuration is used, and
     missing identity or object-write failures are returned as GIT_ERROR.
 
-    The commit has no parents and contains exactly __git-centric__/.gitkeep,
-    with empty file contents. HEAD, the index, and worktree files are untouched.
+    The commit has no parents and contains the empty metadata marker and initial user public key.
+    HEAD, the index, and worktree files are untouched.
     """
     try:
         path = Path(directory).absolute()
@@ -148,25 +149,39 @@ def initialize_gc(directory: str | Path = ".") -> Result[str]:
                     return Failure(FailureReason.ALREADY_INITIALIZED, "Git-centric is initialized")
                 return Failure(FailureReason.BRANCH_CONFLICT, f"Ref already exists: {GC_REF}")
 
-            # Objects are constructed bottom-up. hash-object writes the empty
-            # blob; the first tree contains .gitkeep; the second is the root
-            # tree whose only entry is the reserved directory.
-            blob = _git(repo, "hash-object", "-w", "--stdin", stdin=b"")
-            directory_tree = _git(
-                repo,
-                "mktree",
-                stdin=f"{GIT_REGULAR_FILE_MODE} blob {blob}\t{GC_KEEP_FILE}\n".encode(),
+            # Build the identity and marker in the same orphan tree. Resolve the
+            # author through Git so repository configuration and overrides agree.
+            from .access import user_tree, validate_name
+            from .keys import local_public_key
+            from .metadata import _blob, _Problem, _write_tree
+
+            author = _git(repo, "var", "GIT_AUTHOR_IDENT").rsplit(" <", 1)[0]
+            try:
+                validate_name(author)
+            except _Problem as exc:
+                return Failure(exc.reason, str(exc))
+            try:
+                key = local_public_key()
+            except ValueError as exc:
+                return Failure(FailureReason.IO_ERROR, str(exc))
+            user = _write_tree(repo, user_tree(repo, key))
+            users = _write_tree(repo, {author: user})
+            access = _write_tree(repo, {USERS_DIRECTORY: users})
+            directory_tree = _write_tree(
+                repo, {GC_KEEP_FILE: _blob(repo, ""), ACCESS_DIRECTORY: access}
             )
-            root_tree = _git(
-                repo,
-                "mktree",
-                stdin=f"{GIT_DIRECTORY_MODE} tree {directory_tree}\t{GC_DIRECTORY}\n".encode(),
-            )
+            root_tree = _write_tree(repo, {GC_DIRECTORY: directory_tree})[2]
 
             # Omitting every -p argument is what makes this an orphan commit.
             # We never run checkout, add, commit, or write-tree, so even staged
             # user changes cannot accidentally enter the new commit.
-            commit = _git(repo, "commit-tree", root_tree, "-m", GC_INITIAL_COMMIT_MESSAGE)
+            commit = _git(
+                repo,
+                "commit-tree",
+                root_tree,
+                "-m",
+                f"{GC_INITIAL_COMMIT_MESSAGE} and register user {author}",
+            )
 
             # 'create' asserts absence inside Git's ref transaction, closing the
             # race between the earlier check and this write. No hard-coded hash

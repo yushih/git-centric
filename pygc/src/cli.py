@@ -123,7 +123,7 @@ def init(
     repo_dir: RepoDir = None,
     do_not_finalize: Defer = False,
 ) -> None:
-    """Initialize Git-centric metadata in an existing Git repository."""
+    """Initialize metadata and register the Git author with a local Ed25519 key."""
     # Translate the library's result into CLI output and an exit status. The
     # library itself remains independent of Typer and never exits the process.
     match library.initialize_gc(_directory(repo_dir, directory)):
@@ -539,3 +539,65 @@ def issue_comment_delete(
 ) -> None:
     """Delete ISSUE_ID:COMMENT_ID and incoming reply links; main cannot be deleted."""
     _output(library.delete_issue_comment(target, directory=_directory(repo_dir)))
+
+
+access_app = typer.Typer(no_args_is_help=True, help="Manage registered users and roles.")
+app.add_typer(access_app, name="access")
+role_app = typer.Typer(no_args_is_help=True, help="Manage role metadata and membership.")
+user_app = typer.Typer(no_args_is_help=True, help="Register and list user public keys.")
+access_app.add_typer(role_app, name="role")
+access_app.add_typer(user_app, name="user")
+
+
+@user_app.command("add", cls=_FinalizingCommand)
+def user_add(
+    name: str, public_key: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+) -> None:
+    """Register a named user with a quoted OpenSSH Ed25519 public key."""
+    _output(library.add_user(name, public_key, directory=_directory(repo_dir)))
+
+
+@user_app.command("list", cls=_FinalizingCommand)
+def user_list(repo_dir: RepoDir = None, do_not_finalize: Defer = False) -> None:
+    """List registered users and their public keys."""
+    _output(library.list_users(directory=_directory(repo_dir)))
+
+
+@role_app.command("list", cls=_FinalizingCommand)
+def role_list(repo_dir: RepoDir = None, do_not_finalize: Defer = False) -> None:
+    """List roles with their metadata and assigned users."""
+    _output(library.list_roles(directory=_directory(repo_dir)))
+
+
+@role_app.command("create", cls=_FinalizingCommand)
+def role_create(
+    name: str,
+    metadata: Annotated[str, typer.Argument()] = "",
+    repo_dir: RepoDir = None,
+    do_not_finalize: Defer = False,
+) -> None:
+    """Create a role with optional text metadata."""
+    _output(library.create_role(name, metadata, directory=_directory(repo_dir)))
+
+
+@role_app.command("remove", cls=_FinalizingCommand)
+@role_app.command("delete", cls=_FinalizingCommand)
+def role_delete(name: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False) -> None:
+    """Delete an empty role."""
+    _output(library.delete_role(name, directory=_directory(repo_dir)))
+
+
+@role_app.command("assign", cls=_FinalizingCommand)
+def role_assign(
+    user: str, role: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+) -> None:
+    """Assign a role to a user. Quote * to select all users."""
+    _output(library.assign_role(user, role, directory=_directory(repo_dir)))
+
+
+@role_app.command("unassign", cls=_FinalizingCommand)
+def role_unassign(
+    user: str, role: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+) -> None:
+    """Remove a role from a user. Quote * to select all users."""
+    _output(library.unassign_role(user, role, directory=_directory(repo_dir)))
