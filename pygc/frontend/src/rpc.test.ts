@@ -110,3 +110,16 @@ it("rejects a malformed pull request comparison before rendering its files", asy
     "Invalid JSON-RPC result",
   );
 });
+
+it("rejects malformed memberships in access snapshots and write results", async () => {
+  const role = { name: "ci", metadata: "", users: [42] };
+  const tip = "a".repeat(40);
+  vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+    const { id, method } = JSON.parse(init.body as string);
+    const result = method === "access.get" ? { metadata_tip: tip, users: [], roles: [role] } : role;
+    return Response.json({ jsonrpc: "2.0", id, result });
+  });
+  await expect(call("access.get", {})).rejects.toThrow("Invalid JSON-RPC result");
+  await expect(call("access.roles.assign", { user: "*", role: "ci", expectedTip: tip }))
+    .rejects.toThrow("Invalid JSON-RPC result");
+});

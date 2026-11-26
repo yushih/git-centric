@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from git import Repo
+from git.exc import GitCommandError
 
 from .constants import (
     ACCESS_DIRECTORY,
@@ -43,6 +44,13 @@ class Role:
     users: list[str]
 
 
+@dataclass(frozen=True)
+class AccessSnapshot:
+    metadata_tip: str
+    users: list[User]
+    roles: list[Role]
+
+
 def validate_name(name: str, reason: FailureReason = FailureReason.INVALID_ARGUMENT) -> None:
     if (
         not name.strip()
@@ -59,9 +67,12 @@ def user_tree(repo: Repo, key: str) -> Entries:
 
 
 class _Registry:
-    def __init__(self, repo: Repo):
+    def __init__(self, repo: Repo, expected_tip: str | None):
+        self.expected_tip = expected_tip
         self.repo = repo
         parent = _branch_oid(repo)
+        if expected_tip is not None and parent != expected_tip:
+            _reject(FailureReason.STALE_SNAPSHOT, "Registry changed; reload before saving")
         if parent is None or not _has_gc_directory(repo, parent):
             _reject(FailureReason.NOT_INITIALIZED, "Run gc init first")
         self.parent = parent
@@ -105,7 +116,13 @@ class _Registry:
         commit = prepare_commit(
             self.repo, self.root, self.gc, self.access, ACCESS_DIRECTORY, self.parent, message
         )
-        publish_commit(self.repo, commit, self.parent)
+        try:
+            publish_commit(self.repo, commit, self.parent)
+        except GitCommandError:
+            # Translate a lost publication race only for conditional callers.
+            if self.expected_tip is not None and _branch_oid(self.repo) != self.parent:
+                _reject(FailureReason.STALE_SNAPSHOT, "Registry changed; reload before saving")
+            raise
 
     def add(self, name: str, key: str) -> User:
         validate_name(name)
@@ -170,20 +187,24 @@ class _Registry:
         return Role(name, role.metadata, sorted(members))
 
 
-def _run[T](directory: str | Path, operation: Callable[[_Registry], T]) -> Result[T]:
+def _run[T](
+    directory: str | Path, operation: Callable[[_Registry], T], expected_tip: str | None = None
+) -> Result[T]:
     try:
         with Repo(
             Path(directory).absolute(), search_parent_directories=True, expand_vars=False
         ) as repo:
-            return Success(operation(_Registry(repo)))
+            return Success(operation(_Registry(repo, expected_tip)))
     except _Problem as exc:
         return Failure(exc.reason, str(exc))
     except Exception as exc:
         return _failure(exc)
 
 
-def add_user(name: str, public_key: str, directory: str | Path = ".") -> Result[User]:
-    return _run(directory, lambda r: r.add(name, public_key))
+def add_user(
+    name: str, public_key: str, directory: str | Path = ".", *, expected_tip: str | None = None
+) -> Result[User]:
+    return _run(directory, lambda r: r.add(name, public_key), expected_tip)
 
 
 def list_users(directory: str | Path = ".") -> Result[list[User]]:
@@ -194,17 +215,35 @@ def list_roles(directory: str | Path = ".") -> Result[list[Role]]:
     return _run(directory, lambda r: [r.role(n) for n in r.metadata])
 
 
-def create_role(name: str, metadata: str = "", directory: str | Path = ".") -> Result[Role]:
-    return _run(directory, lambda r: r.create(name, metadata))
+def create_role(
+    name: str, metadata: str = "", directory: str | Path = ".", *, expected_tip: str | None = None
+) -> Result[Role]:
+    return _run(directory, lambda r: r.create(name, metadata), expected_tip)
 
 
-def delete_role(name: str, directory: str | Path = ".") -> Result[Role]:
-    return _run(directory, lambda r: r.delete(name))
+def delete_role(
+    name: str, directory: str | Path = ".", *, expected_tip: str | None = None
+) -> Result[Role]:
+    return _run(directory, lambda r: r.delete(name), expected_tip)
 
 
-def assign_role(user: str, role: str, directory: str | Path = ".") -> Result[Role]:
-    return _run(directory, lambda r: r.membership(user, role, True))
+def assign_role(
+    user: str, role: str, directory: str | Path = ".", *, expected_tip: str | None = None
+) -> Result[Role]:
+    return _run(directory, lambda r: r.membership(user, role, True), expected_tip)
 
 
-def unassign_role(user: str, role: str, directory: str | Path = ".") -> Result[Role]:
-    return _run(directory, lambda r: r.membership(user, role, False))
+def unassign_role(
+    user: str, role: str, directory: str | Path = ".", *, expected_tip: str | None = None
+) -> Result[Role]:
+    return _run(directory, lambda r: r.membership(user, role, False), expected_tip)
+
+
+def get_access(directory: str | Path = ".") -> Result[AccessSnapshot]:
+    """Read both views at one immutable tip, including the precondition for writes."""
+    return _run(
+        directory,
+        lambda r: AccessSnapshot(
+            r.parent, [User(n, k) for n, k in r.keys.items()], [r.role(n) for n in r.metadata]
+        ),
+    )

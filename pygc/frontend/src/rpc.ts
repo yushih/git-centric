@@ -115,7 +115,19 @@ type ListFilters = {
 };
 type Guard = { id: string; expectedTip: string };
 type Endpoint<K extends string, P, R> = Record<K, { params: P; result: R }>;
-type Methods = Endpoint<`${Tab}.show`, { id: string }, Detail> &
+export type AccessUser = { name: string; public_key: string };
+export type AccessRole = { name: string; metadata: string; users: string[] };
+export type AccessSnapshot = { metadata_tip: string; users: AccessUser[]; roles: AccessRole[] };
+type Conditional = { expectedTip: string };
+const accessUser = (v: unknown) => record(v) && typeof v.name === "string" && typeof v.public_key === "string";
+const accessRole = (v: unknown) => record(v) && typeof v.name === "string" && typeof v.metadata === "string" && strings(v.users);
+
+type Methods = Endpoint<"access.get", Record<string, never>, AccessSnapshot> &
+  Endpoint<"access.users.add", Conditional & { name: string; publicKey: string }, AccessUser> &
+  Endpoint<"access.roles.create", Conditional & { name: string; metadata?: string }, AccessRole> &
+  Endpoint<"access.roles.delete", Conditional & { name: string }, AccessRole> &
+  Endpoint<"access.roles.assign" | "access.roles.unassign", Conditional & { user: string; role: string }, AccessRole> &
+  Endpoint<`${Tab}.show`, { id: string }, Detail> &
   Endpoint<
     `${Tab}.create`,
     { title: string; description: string; base?: string; compare?: string },
@@ -241,6 +253,12 @@ export async function call<K extends keyof Methods>(
     typeof c.text === "string" &&
     strings(c.replies_to);
   function validResult() {
+    if (method === "access.get")
+      return record(v) && typeof v.metadata_tip === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(v.metadata_tip)
+        && Array.isArray(v.users) && v.users.every(accessUser)
+        && Array.isArray(v.roles) && v.roles.every(accessRole);
+    if (method === "access.users.add") return accessUser(v);
+    if (method.startsWith("access.roles.")) return accessRole(v);
     if (method === "repo.get") return isContext(v);
     if (method === "code.browse")
       return (

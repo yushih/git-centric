@@ -138,6 +138,14 @@ Delete (alias `remove`) requires an empty role. Role records contain `name`,
 `add_user`, `list_users`, `create_role`, `list_roles`, `assign_role`, `unassign_role`,
 and `delete_role`, each accepting the optional `directory` argument.
 
+In the web UI, open **Access → Roles** to create roles, manage membership or delete
+an empty role. **Access → Users** lists each user’s roles and public key and accepts
+new registrations. Choosing **All users** shows how many memberships will change.
+If another session writes metadata, reload and review the form before submitting
+again. A successful action schedules background finalization. Python callers can
+read the same snapshot with `get_access(directory)` and pass its `metadata_tip`
+as `expected_tip` to a registry write.
+
 ### Participating nodes
 
 After `gc init`, register a Git endpoint and list the repository's nodes:

@@ -10,12 +10,14 @@ from .library import (
     is_gc_initialized,
 )
 from .library.access import (
+    AccessSnapshot,
     Role,
     User,
     add_user,
     assign_role,
     create_role,
     delete_role,
+    get_access,
     list_roles,
     list_users,
     unassign_role,
@@ -52,6 +54,8 @@ from .library.pull_requests import (
 from .library.repository import RepositoryContext, get_repository
 
 __all__ = [
+    "AccessSnapshot",
+    "get_access",
     "Role",
     "User",
     "add_user",

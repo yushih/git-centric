@@ -340,7 +340,7 @@ This design affords superb flexibility while keeping a clean architecture. Users
 (L1)
 Each roles is a file under the `__git-centric__/access-control/roles` directory. The file name is role name. The file content is the role metadata.
 
-Each user is a directory under the `__git-centric__/access-control/users` directory. The name of the directory is the user name. Under each user directory, there is a `pk-Ed25519` file storing the Ed25519 public key of the user.
+Each user is a directory under the `__git-centric__/access-control/users` directory. The name of the directory is the user name. Under each user directory, there is a `pk-Ed25519` file storing the Ed25519 public key of the user. Under each user directory, there is a `roles` directory, each file name in which is a role that the user belongs to.
 
 (L2)
 When `gc init` runs, it creates a `.__git-centric__sk-Ed25519` file in the user home directory storing the corresponding private key.It also creates default roles `owner`, `admin`, `ci` and `merger`. The creating user is an owner.

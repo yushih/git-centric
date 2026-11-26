@@ -4,12 +4,14 @@ Git-centric operations return algebraic result values instead of throwing.
 """
 
 from .access import (
+    AccessSnapshot,
     Role,
     User,
     add_user,
     assign_role,
     create_role,
     delete_role,
+    get_access,
     list_roles,
     list_users,
     unassign_role,
@@ -48,6 +50,8 @@ from .repository import RepositoryContext, get_repository
 from .result import Failure, FailureReason, Result, Success
 
 __all__ = [
+    "AccessSnapshot",
+    "get_access",
     "Role",
     "User",
     "add_user",

@@ -3,6 +3,7 @@
 State: implemented. See the [release verification record](../changes/2026-11-20-forge-ui.md) and [initial repository context record](../changes/2026-11-20-web-context.md).
 
 Web actions schedule [background finalization](../changes/2026-11-25-web-finalization.md).
+Implemented registry workflows are described in [Users and roles in the web UI](../changes/2026-11-26-access-web.md).
 
 ## Product and information architecture
 

@@ -18,7 +18,9 @@
 - ACCESS-005. All operations return Result. CLI access user add/list and access role
   create/list/delete/remove/assign/unassign emit JSON and follow existing repo and
   finalization options. Writes compare and swap one metadata tip and preserve the checkout.
-  Policy execution, enforcement and RPC registration are outside this feature.
+  The [web interface](../changes/2026-11-26-access-web.md) adds explicit RPC registration,
+  a combined snapshot and optional conditional writes. Policy execution and enforcement
+  remain outside the registry.
 
 Implement the key bootstrap, registry, exports and CLI in that order. Verify actual
 Git objects, key reuse, lifecycle, wildcard updates, failures and competing writes

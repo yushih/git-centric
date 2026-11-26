@@ -141,3 +141,75 @@ def test_reply_keeps_creation_byline(repo, monkeypatch, tab):  # noqa: F811
     opening, revised = detail["comments"]
     assert opening["author"] == detail["pull_request" if tab == "pulls" else "issue"]["author"]
     assert (revised["author"], revised["created_at"], revised["text"]) == (author, date, "Revised")
+
+
+def test_access_snapshot_and_guarded_writes(repo, tmp_path):  # noqa: F811
+    # A second session adding a user invalidates the first session's bulk preview.
+    async def exercise():
+        transport = httpx.ASGITransport(app=create_app(directory=repo))
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+
+            async def rpc(method, **params):
+                response = await client.post(
+                    "/api/rpc", json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+                )
+                return response.json()
+
+            tip = (await rpc("repo.initialize"))["result"]
+            snapshot = (await rpc("access.get"))["result"]
+            assert snapshot["metadata_tip"] == tip
+            assert [r["name"] for r in snapshot["roles"]] == ["admin", "ci", "merger", "owner"]
+            user = snapshot["users"][0]
+            assert snapshot["roles"][-1]["users"] == [user["name"]]
+            assert (
+                await rpc(
+                    "access.users.add", name="Second", publicKey=user["public_key"], expectedTip=tip
+                )
+            )["result"]["name"] == "Second"
+            current = git(repo, "rev-parse", GC_REF)
+            params = dict(user="*", role="ci", expectedTip=tip)
+            stale = await rpc("access.roles.assign", **params)
+            assert stale["error"]["data"]["reason"] == "stale_snapshot"
+            assert git(repo, "rev-parse", GC_REF) == current
+            assert (await rpc("access.roles.delete", name="ci"))["error"]["code"] == -32602
+            assert (await rpc("access.get", directory="/tmp"))["error"]["code"] == -32602
+            params["expectedTip"] = current
+            assigned = (await rpc("access.roles.assign", **params))["result"]
+            assert assigned["users"] == [user["name"], "Second"]
+            assert git(repo, "rev-parse", GC_REF + "^") == current
+            params["expectedTip"] = git(repo, "rev-parse", GC_REF)
+            assert (await rpc("access.roles.assign", **params))["result"] == assigned
+            assert git(repo, "rev-parse", GC_REF) == params["expectedTip"]
+            response = await client.post(
+                "/api/rpc",
+                headers={"Origin": "https://example.org"},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "access.roles.unassign",
+                    "params": params,
+                },
+            )
+            assert response.status_code == 403
+            assert git(repo, "rev-parse", GC_REF) == params["expectedTip"]
+
+        # An independently selected legacy repo has no implicit default records.
+        legacy = tmp_path / "legacy"
+        git(tmp_path, "init", str(legacy))
+        marker = legacy / "__git-centric__/.gitkeep"
+        marker.parent.mkdir()
+        marker.touch()
+        git(legacy, "add", ".")
+        git(legacy, "commit", "-m", "legacy metadata")
+        git(legacy, "branch", "__git-centric__")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=create_app(directory=legacy)),
+            base_url="http://localhost",
+        ) as client:
+            assert (await rpc("access.get"))["result"] == {
+                "users": [],
+                "roles": [],
+                "metadata_tip": git(legacy, "rev-parse", GC_REF),
+            }
+
+    asyncio.run(exercise())

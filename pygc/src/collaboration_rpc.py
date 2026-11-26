@@ -77,7 +77,31 @@ def collaboration_methods(directory: Path) -> dict[str, Callable[..., Any]]:
         outcome = lib.read_pr_diff(id, baseTip, compareTip, path, directory)
         return outcome.value if isinstance(outcome, lib.Success) else outcome
 
+    def access_get() -> Any:
+        return result(lib.get_access(directory))
+
+    def user_add(name: str, publicKey: str, expectedTip: Tip) -> Any:
+        return result(lib.add_user(name, publicKey, directory, expected_tip=expectedTip))
+
+    def role_create(name: str, expectedTip: Tip, metadata: str = "") -> Any:
+        return result(lib.create_role(name, metadata, directory, expected_tip=expectedTip))
+
+    def role_delete(name: str, expectedTip: Tip) -> Any:
+        return result(lib.delete_role(name, directory, expected_tip=expectedTip))
+
+    def role_assign(user: str, role: str, expectedTip: Tip) -> Any:
+        return result(lib.assign_role(user, role, directory, expected_tip=expectedTip))
+
+    def role_unassign(user: str, role: str, expectedTip: Tip) -> Any:
+        return result(lib.unassign_role(user, role, directory, expected_tip=expectedTip))
+
     methods: dict[str, Callable[..., Any]] = {
+        "access.get": checked(access_get),
+        "access.users.add": checked(user_add),
+        "access.roles.create": checked(role_create),
+        "access.roles.delete": checked(role_delete),
+        "access.roles.assign": checked(role_assign),
+        "access.roles.unassign": checked(role_unassign),
         "repo.initialize": checked(initialize),
         "issues.create": checked(issue_create),
         "pulls.create": checked(pull_create),
