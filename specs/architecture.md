@@ -8,7 +8,7 @@ Git-centric stores collaboration metadata in Git. The current Python implementat
 provides a library, `gc` CLI, and FastAPI-hosted React SPA. Initialization, pull requests, issues, and conversations are exposed through
 the library, CLI, and repository web interface. The SPA also browses committed
 source, history, and patches through explicit repository-scoped RPC methods. The CLI can explicitly [finalize metadata with registered peers](features/006-finalization.md).
-Automatic replication, authentication, and remote deployment remain outside
+CLI commands finalize by default. Authentication and remote deployment remain outside
 the implemented contracts. See the feature specs for domain behavior.
 
 ## Layout and dependencies

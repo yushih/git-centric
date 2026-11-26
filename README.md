@@ -317,7 +317,9 @@ else:
 (L2)
 ```gc consensus finalize```: run the finalization procedure
 
+Every successful CLI command finalizes by default. Pass `-do-not-finalize` or
+`--do-not-finalize` to record a local "not finalized" note instead.
+
 TODO
 ```gc merge <pr>```
---do-not-finalize
 

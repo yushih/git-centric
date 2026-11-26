@@ -26,7 +26,7 @@ def pair(repo: Path, tmp_path: Path) -> tuple[Path, Path]:  # noqa: F811
 
 
 def test_all_repo_commands_use_override(pair, monkeypatch) -> None:
-    # Every command must act in the selected repo, warn once on stderr, keep
+    # Every command must act in the selected repo, emit one directory-selection warning, keep
     # stdout parseable, and preserve the current repository's ref and cwd.
     current, selected = pair
     monkeypatch.chdir(current)
@@ -36,7 +36,7 @@ def test_all_repo_commands_use_override(pair, monkeypatch) -> None:
     def invoke(args):
         result = runner.invoke(app, [*args, f"--repo-dir={selected}"])
         assert result.exit_code == 0, result.output
-        assert result.stderr.count("Warning:") == 1
+        assert result.stderr.count("Warning: current directory") == 1
         assert str(current) in result.stderr and str(selected) in result.stderr
         assert Path.cwd() == current
         assert git(current, "rev-parse", GC_REF) == before
@@ -47,7 +47,7 @@ def test_all_repo_commands_use_override(pair, monkeypatch) -> None:
     assert invoke(["pr", "show", item["id"]])["pull_request"]["id"] == item["id"]
     shown = runner.invoke(app, ["pr", "show", item["id"], "--text", "--repo-dir", str(selected)])
     assert shown.exit_code == 0 and f"PR {item['id']}" in shown.stdout
-    assert shown.stderr.count("Warning:") == 1
+    assert shown.stderr.count("Warning: current directory") == 1
     assert invoke(["pr", "update", item["id"], "title=Changed"])["title"] == "Changed"
     comment = invoke(["comment", item["id"], "Body"])
     target = item["id"] + ":" + comment["id"]
@@ -57,7 +57,11 @@ def test_all_repo_commands_use_override(pair, monkeypatch) -> None:
     assert len(invoke(["pr", "comments", item["id"]])) == 1
     # No option still means cwd, without a warning or accidental sticky selection.
     result = runner.invoke(app, ["pr", "list"])
-    assert result.exit_code == 0 and json.loads(result.stdout) == [] and not result.stderr
+    assert (
+        result.exit_code == 0
+        and json.loads(result.stdout) == []
+        and result.stderr == "Warning: no finality\n"
+    )
 
 
 @pytest.mark.parametrize("alias", ["same", "subdir", "symlink", "worktree"])
@@ -77,7 +81,7 @@ def test_same_repository_has_no_warning(pair, monkeypatch, tmp_path, alias) -> N
         git(current, "worktree", "add", "-b", "linked", str(selected), "main")
     result = CliRunner().invoke(app, ["pr", "list", "--repo-dir", str(selected)])
     assert result.exit_code == 0, result.output
-    assert not result.stderr
+    assert result.stderr == "Warning: no finality\n"
 
 
 def test_uninitialized_and_invalid_locations(pair, tmp_path, monkeypatch) -> None:
@@ -92,7 +96,7 @@ def test_uninitialized_and_invalid_locations(pair, tmp_path, monkeypatch) -> Non
             git(plain, "init", "--initial-branch=main")
         monkeypatch.chdir(plain)
         result = runner.invoke(app, ["pr", "list", "--repo-dir", str(selected)])
-        assert result.exit_code == 0 and not result.stderr
+        assert result.exit_code == 0 and result.stderr == "Warning: no finality\n"
     monkeypatch.chdir(current)
     before = git(current, "rev-parse", GC_REF)
     for target, reason in ((plain, "not_initialized"), (tmp_path / "missing", "not_a_repository")):
@@ -105,7 +109,7 @@ def test_uninitialized_and_invalid_locations(pair, tmp_path, monkeypatch) -> Non
         "pygc.cli.library.is_gc_initialized", return_value=Failure(FailureReason.IO_ERROR, "x")
     ):
         result = runner.invoke(app, ["pr", "list", "--repo-dir", str(selected)])
-    assert result.exit_code == 0 and not result.stderr
+    assert result.exit_code == 0 and result.stderr == "Warning: no finality\n"
 
 
 def test_init_option_overrides_legacy_directory(repo, tmp_path, monkeypatch) -> None:  # noqa: F811
@@ -117,17 +121,17 @@ def test_init_option_overrides_legacy_directory(repo, tmp_path, monkeypatch) -> 
     monkeypatch.chdir(repo)
     result = CliRunner().invoke(app, ["init", str(repo), "--repo-dir=../selected"])
     assert result.exit_code == 0, result.output
-    assert not result.stderr
+    assert result.stderr == "Warning: no finality\n"
     assert is_gc_initialized(repo) == Success(False)
     assert is_gc_initialized(selected) == Success(True)
     assert isinstance(initialize_gc(repo), Success)
     result = CliRunner().invoke(app, ["init", "--repo-dir", str(selected)])
     assert result.exit_code == 1 and "already_initialized" in result.stderr
-    assert result.stderr.count("Warning:") == 1
+    assert result.stderr.count("Warning: current directory") == 1
 
 
 def test_non_repo_commands_and_help(pair, monkeypatch) -> None:
-    # Repository-independent commands accept the common option and retain their
+    # Help and web accept the common option and retain their
     # existing behavior. All leaf help pages advertise the option.
     current, selected = pair
     monkeypatch.chdir(current)
@@ -136,7 +140,7 @@ def test_non_repo_commands_and_help(pair, monkeypatch) -> None:
         for args in (["help"], ["web"]):
             result = runner.invoke(app, [*args, "--repo-dir", str(selected)])
             assert result.exit_code == 0, result.output
-            assert result.stderr.count("Warning:") == 1
+            assert result.stderr.count("Warning: current directory") == 1
         run.assert_called_once_with(
             "pygc.web:create_app", factory=True, host="127.0.0.1", port=8000, reload=False
         )

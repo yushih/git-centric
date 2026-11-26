@@ -8,7 +8,7 @@ import uvicorn
 from git import Repo
 from git.exc import GitError
 from typer._click.core import Context as ClickContext
-from typer.core import TyperGroup
+from typer.core import TyperCommand, TyperGroup
 
 from . import library
 
@@ -22,6 +22,55 @@ RepoDir = Annotated[
     Path | None,
     typer.Option("--repo-dir", help="Repository directory; overrides the current directory."),
 ]
+
+
+Defer = Annotated[
+    bool,
+    typer.Option(
+        "-do-not-finalize",
+        "--do-not-finalize",
+        help="Mark the local metadata tip as not finalized and skip peer contact.",
+    ),
+]
+
+
+@app.callback()
+def common_options(ctx: typer.Context, do_not_finalize: Defer = False) -> None:
+    """Set the default for the whole invocation; leaf commands also accept the flag."""
+    ctx.obj = do_not_finalize
+
+
+def _complete(
+    directory: Path, defer: bool, *, optional_repo: bool = False, report: bool = False
+) -> None:
+    """Run exactly one completion action and keep ordinary command stdout intact."""
+    result = library.defer_finalization(directory) if defer else library.finalize(directory)
+    if isinstance(result, library.Failure):
+        # Help and web also work before initialization, when there is no tip to finalize.
+        if (
+            optional_repo
+            and not defer
+            and result.reason
+            in (library.FailureReason.NOT_INITIALIZED, library.FailureReason.NOT_A_REPOSITORY)
+        ):
+            return
+        _output(result)
+        return
+    for warning in result.value.warnings:
+        typer.echo(f"Warning: {warning}", err=True)
+    if report:
+        _output(result)
+
+
+class _FinalizingCommand(TyperCommand):
+    """Complete repository commands only after their callback returns successfully."""
+
+    def invoke(self, ctx: ClickContext) -> None:
+        super().invoke(ctx)
+        # init also accepts a positional directory. Resolve the same precedence
+        # as the command itself without repeating its directory-selection warning.
+        directory = ctx.params.get("repo_dir") or ctx.params.get("directory") or "."
+        _complete(Path(directory), ctx.obj or ctx.params["do_not_finalize"])
 
 
 def _directory(repo_dir: Path | None, default: Path = Path(".")) -> Path:
@@ -55,20 +104,24 @@ def _directory(repo_dir: Path | None, default: Path = Path(".")) -> Path:
 
 
 @app.command("help")
-def help_command(ctx: typer.Context, repo_dir: RepoDir = None) -> None:
+def help_command(
+    ctx: typer.Context, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+) -> None:
     """Show the top-level help message."""
-    _directory(repo_dir)
+    directory = _directory(repo_dir)
     assert ctx.parent is not None
     typer.echo(ctx.parent.get_help())
+    _complete(directory, ctx.obj or do_not_finalize, optional_repo=True)
 
 
-@app.command()
+@app.command(cls=_FinalizingCommand)
 def init(
     directory: Annotated[
         Path,
         typer.Argument(help="Legacy repository directory; --repo-dir overrides it. Default: cwd."),
     ] = Path("."),
     repo_dir: RepoDir = None,
+    do_not_finalize: Defer = False,
 ) -> None:
     """Initialize Git-centric metadata in an existing Git repository."""
     # Translate the library's result into CLI output and an exit status. The
@@ -83,17 +136,21 @@ def init(
 
 @app.command()
 def web(
+    ctx: typer.Context,
     host: Annotated[str, typer.Option(help="Address to bind.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(min=1, max=65535)] = 8000,
     reload: Annotated[bool, typer.Option(help="Reload Python code during development.")] = False,
     repo_dir: RepoDir = None,
+    do_not_finalize: Defer = False,
 ) -> None:
     """Start the FastAPI server and serve the built React frontend."""
     import os
 
     # Uvicorn reload workers inherit the selected absolute directory.
+    directory = _directory(repo_dir).resolve()
+    _complete(directory, ctx.obj or do_not_finalize, optional_repo=True)
     previous = os.environ.get("PYGC_WEB_REPO")
-    os.environ["PYGC_WEB_REPO"] = str(_directory(repo_dir).resolve())
+    os.environ["PYGC_WEB_REPO"] = str(directory)
     try:
         uvicorn.run("pygc.web:create_app", factory=True, host=host, port=port, reload=reload)
     finally:
@@ -141,27 +198,25 @@ app.add_typer(consensus_app, name="consensus")
 
 
 @consensus_app.command("finalize")
-def consensus_finalize(repo_dir: RepoDir = None) -> None:
+def consensus_finalize(
+    ctx: typer.Context, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+) -> None:
     """Push metadata to registered nodes, reconcile histories and report finality."""
-    result = library.finalize(_directory(repo_dir))
-    if isinstance(result, library.Success):
-        for warning in result.value.warnings:
-            typer.echo(f"Warning: {warning}", err=True)
-    _output(result)
+    _complete(_directory(repo_dir), ctx.obj or do_not_finalize, report=True)
 
 
 node_app = typer.Typer(no_args_is_help=True, help="Register and list participating repositories.")
 app.add_typer(node_app, name="node")
 
 
-@node_app.command("add")
-def node_add(name: str, url: str, repo_dir: RepoDir = None) -> None:
+@node_app.command("add", cls=_FinalizingCommand)
+def node_add(name: str, url: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False) -> None:
     """Register NAME with its Git URL or local path."""
     _output(library.add_node(name, url, _directory(repo_dir)))
 
 
-@node_app.command("list")
-def node_list(repo_dir: RepoDir = None) -> None:
+@node_app.command("list", cls=_FinalizingCommand)
+def node_list(repo_dir: RepoDir = None, do_not_finalize: Defer = False) -> None:
     """List registered nodes by name as JSON."""
     _output(library.list_nodes(_directory(repo_dir)))
 
@@ -172,9 +227,14 @@ def _text(value: str) -> str:
     return sys.stdin.read() if value == "@-" else value
 
 
-@pr_app.command("new")
+@pr_app.command("new", cls=_FinalizingCommand)
 def pr_new(
-    compare: str, base: str, title: str, comment: str = typer.Argument(""), repo_dir: RepoDir = None
+    compare: str,
+    base: str,
+    title: str,
+    comment: str = typer.Argument(""),
+    repo_dir: RepoDir = None,
+    do_not_finalize: Defer = False,
 ) -> None:
     """Create a PR: COMPARE BASE TITLE [COMMENT]. Quote text; @- reads stdin."""
     import asyncio
@@ -188,9 +248,11 @@ def pr_new(
     )
 
 
-@pr_app.command("list")
+@pr_app.command("list", cls=_FinalizingCommand)
 def pr_list(
-    filters: Annotated[list[str] | None, typer.Argument()] = None, repo_dir: RepoDir = None
+    filters: Annotated[list[str] | None, typer.Argument()] = None,
+    repo_dir: RepoDir = None,
+    do_not_finalize: Defer = False,
 ) -> None:
     """Filter with open, mine, author=, compare=, base=, title=REGEX (AND)."""
     _output(library.list_pull_requests(filters or (), directory=_directory(repo_dir)))
@@ -272,13 +334,14 @@ def _conversation_text(comments: tuple[library.Comment, ...]) -> str:
     return "\n".join(lines)
 
 
-@pr_app.command("show", no_args_is_help=True)
+@pr_app.command("show", no_args_is_help=True, cls=_FinalizingCommand)
 def pr_show(
     identifier: Annotated[str, typer.Argument(metavar="PR_ID", help="Pull request ID to show.")],
     text: Annotated[
         bool, typer.Option("--text", help="Show plain text with a comment tree.")
     ] = False,
     repo_dir: RepoDir = None,
+    do_not_finalize: Defer = False,
 ) -> None:
     """Show a pull request and all comments as JSON; --text displays a reply tree.
 
@@ -292,20 +355,24 @@ def pr_show(
         _output(result)
 
 
-@pr_app.command("update")
+@pr_app.command("update", cls=_FinalizingCommand)
 def pr_update(
-    identifier: str, updates: Annotated[list[str], typer.Argument()], repo_dir: RepoDir = None
+    identifier: str,
+    updates: Annotated[list[str], typer.Argument()],
+    repo_dir: RepoDir = None,
+    do_not_finalize: Defer = False,
 ) -> None:
     """Apply compare=, base=, title=, draft/ready and close/reopen independently."""
     _output(library.update_pull_request(identifier, updates, directory=_directory(repo_dir)))
 
 
-@pr_app.command("comments", no_args_is_help=True)
+@pr_app.command("comments", no_args_is_help=True, cls=_FinalizingCommand)
 def pr_comments(
     identifier: Annotated[
         str, typer.Argument(metavar="PR_ID", help="Pull request ID to list comments for.")
     ],
     repo_dir: RepoDir = None,
+    do_not_finalize: Defer = False,
 ) -> None:
     """List a pull request's comments as JSON, including text and reply IDs.
 
@@ -339,8 +406,10 @@ comment_app = typer.Typer(
 app.add_typer(comment_app, name="comment")
 
 
-@comment_app.command("add")
-def comment_command(target: str, comment: str, repo_dir: RepoDir = None) -> None:
+@comment_app.command("add", cls=_FinalizingCommand)
+def comment_command(
+    target: str, comment: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+) -> None:
     """Append quoted COMMENT to PR[:COMMENT_ID...]; @- reads stdin."""
     import asyncio
 
@@ -349,14 +418,18 @@ def comment_command(target: str, comment: str, repo_dir: RepoDir = None) -> None
     )
 
 
-@comment_app.command("update")
-def update_comment_command(target: str, text: str, repo_dir: RepoDir = None) -> None:
+@comment_app.command("update", cls=_FinalizingCommand)
+def update_comment_command(
+    target: str, text: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+) -> None:
     """Replace PR_ID:COMMENT_ID text. Quote TEXT; @- reads stdin; empty text clears."""
     _output(library.update_comment(target, _text(text), directory=_directory(repo_dir)))
 
 
-@comment_app.command("delete")
-def delete_comment_command(target: str, repo_dir: RepoDir = None) -> None:
+@comment_app.command("delete", cls=_FinalizingCommand)
+def delete_comment_command(
+    target: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+) -> None:
     """Delete PR_ID:COMMENT_ID and its reply links. Main must be cleared instead."""
     _output(library.delete_comment(target, directory=_directory(repo_dir)))
 
@@ -367,8 +440,13 @@ app.add_typer(issue_app, name="issue")
 issue_app.add_typer(issue_comment_app, name="comment")
 
 
-@issue_app.command("new")
-def issue_new(title: str, comment: str = typer.Argument(""), repo_dir: RepoDir = None) -> None:
+@issue_app.command("new", cls=_FinalizingCommand)
+def issue_new(
+    title: str,
+    comment: str = typer.Argument(""),
+    repo_dir: RepoDir = None,
+    do_not_finalize: Defer = False,
+) -> None:
     """Create an open issue: TITLE [COMMENT]. Quote text; @- reads stdin."""
     import asyncio
 
@@ -377,27 +455,33 @@ def issue_new(title: str, comment: str = typer.Argument(""), repo_dir: RepoDir =
     )
 
 
-@issue_app.command("list")
+@issue_app.command("list", cls=_FinalizingCommand)
 def issue_list(
-    filters: Annotated[list[str] | None, typer.Argument()] = None, repo_dir: RepoDir = None
+    filters: Annotated[list[str] | None, typer.Argument()] = None,
+    repo_dir: RepoDir = None,
+    do_not_finalize: Defer = False,
 ) -> None:
     """List all issues, or AND filters: open, closed, mine, author=, title=REGEX."""
     _output(library.list_issues(filters or (), directory=_directory(repo_dir)))
 
 
-@issue_app.command("update")
+@issue_app.command("update", cls=_FinalizingCommand)
 def issue_update(
-    identifier: str, updates: Annotated[list[str], typer.Argument()], repo_dir: RepoDir = None
+    identifier: str,
+    updates: Annotated[list[str], typer.Argument()],
+    repo_dir: RepoDir = None,
+    do_not_finalize: Defer = False,
 ) -> None:
     """Apply title=, close or reopen. Combined title/state updates are atomic."""
     _output(library.update_issue(identifier, updates, directory=_directory(repo_dir)))
 
 
-@issue_app.command("show", no_args_is_help=True)
+@issue_app.command("show", no_args_is_help=True, cls=_FinalizingCommand)
 def issue_show(
     identifier: str,
     text: Annotated[bool, typer.Option("--text", help="Show details and a reply tree.")] = False,
     repo_dir: RepoDir = None,
+    do_not_finalize: Defer = False,
 ) -> None:
     """Show issue fields and all comments as JSON; --text displays a reply tree."""
     result = library.show_issue(identifier, directory=_directory(repo_dir))
@@ -421,14 +505,18 @@ def issue_show(
         _output(result)
 
 
-@issue_app.command("comments", no_args_is_help=True)
-def issue_comments(identifier: str, repo_dir: RepoDir = None) -> None:
+@issue_app.command("comments", no_args_is_help=True, cls=_FinalizingCommand)
+def issue_comments(
+    identifier: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+) -> None:
     """List issue comments as JSON, including exact text and reply IDs."""
     _output(library.list_issue_comments(identifier, directory=_directory(repo_dir)))
 
 
-@issue_comment_app.command("add")
-def issue_comment_add(target: str, text: str, repo_dir: RepoDir = None) -> None:
+@issue_comment_app.command("add", cls=_FinalizingCommand)
+def issue_comment_add(
+    target: str, text: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+) -> None:
     """Append TEXT to ISSUE_ID[:COMMENT_ID...]. Quote text; @- reads stdin."""
     import asyncio
 
@@ -437,13 +525,17 @@ def issue_comment_add(target: str, text: str, repo_dir: RepoDir = None) -> None:
     )
 
 
-@issue_comment_app.command("update")
-def issue_comment_update(target: str, text: str, repo_dir: RepoDir = None) -> None:
+@issue_comment_app.command("update", cls=_FinalizingCommand)
+def issue_comment_update(
+    target: str, text: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+) -> None:
     """Replace ISSUE_ID:COMMENT_ID text; @- reads stdin; empty text clears."""
     _output(library.update_issue_comment(target, _text(text), directory=_directory(repo_dir)))
 
 
-@issue_comment_app.command("delete")
-def issue_comment_delete(target: str, repo_dir: RepoDir = None) -> None:
+@issue_comment_app.command("delete", cls=_FinalizingCommand)
+def issue_comment_delete(
+    target: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+) -> None:
     """Delete ISSUE_ID:COMMENT_ID and incoming reply links; main cannot be deleted."""
     _output(library.delete_issue_comment(target, directory=_directory(repo_dir)))

@@ -131,3 +131,68 @@ def test_concurrent_local_write(repo, monkeypatch):  # noqa: F811
     assert finalize(repo).reason == FailureReason.STALE_SNAPSHOT
     assert git(repo, "log", "-1", "--format=%s", GC_REF) == "add node later"
     assert git(repo, "for-each-ref", GIT_NOTES_REF) == ""
+
+
+def test_command_completion_uses_current_metadata_tip(repo, tmp_path):  # noqa: F811
+    # A write pushes its own commit. A deferred write only annotates it, and a
+    # subsequent read retries propagation even though it creates no metadata.
+    runner = CliRunner()
+    args = ["--repo-dir", str(repo)]
+    remote = tmp_path / "peer.git"
+    remote.mkdir()
+    git(remote, "init", "--bare")
+    assert runner.invoke(app, ["init", str(repo), "-do-not-finalize"]).exit_code == 0
+    assert git(repo, "notes", "show", GC_REF) == "not finalized"
+    assert runner.invoke(app, ["node", "add", "peer", str(remote), *args]).exit_code == 0
+    old = git(repo, "rev-parse", GC_REF)
+    assert git(remote, "rev-parse", GC_REF) == old
+
+    result = runner.invoke(app, ["issue", "new", "Repair", "-do-not-finalize", *args])
+    assert result.exit_code == 0 and json.loads(result.stdout)["title"] == "Repair"
+    tip = git(repo, "rev-parse", GC_REF)
+    assert tip != old and git(remote, "rev-parse", GC_REF) == old
+    assert git(repo, "notes", "show", tip) == "not finalized"
+    git(repo, "notes", "append", "-m", "existing annotation", tip)
+    notes = git(repo, "rev-parse", GIT_NOTES_REF)
+
+    # Either spelling and placement defers even the explicit finalize command.
+    for flag in ("-do-not-finalize", "--do-not-finalize"):
+        result = runner.invoke(app, [flag, "consensus", "finalize", *args])
+        assert result.exit_code == 0 and not json.loads(result.stdout)["finalized"]
+    assert git(repo, "rev-parse", GIT_NOTES_REF) == notes
+    assert git(remote, "rev-parse", GC_REF) == old
+    # A command error and eager help do not start a round or alter refs.
+    assert runner.invoke(app, ["issue", "show", "missing", *args]).exit_code == 1
+    assert runner.invoke(app, ["node", "list", "--help", *args]).exit_code == 0
+    assert git(remote, "rev-parse", GC_REF) == old
+    result = runner.invoke(app, ["issue", "list", *args])
+    assert result.exit_code == 0 and json.loads(result.stdout)[0]["title"] == "Repair"
+    assert git(remote, "rev-parse", GC_REF) == tip == git(repo, "rev-parse", GC_REF)
+
+
+def test_cli_runs_one_round_and_surfaces_failure(repo, monkeypatch):  # noqa: F811
+    # Ordinary reads, explicit finalize, help and web each dispatch exactly once.
+    # Web must do so before Uvicorn starts. A failed round returns exit status 1.
+    from pygc import Failure, cli
+
+    initialize_gc(repo)
+    calls = []
+    expected = finalize(repo)
+
+    def record(directory):
+        calls.append(directory)
+        return expected
+
+    monkeypatch.setattr(cli.library, "finalize", record)
+    monkeypatch.setattr(cli.uvicorn, "run", lambda *a, **kw: calls.append("serve"))
+    runner = CliRunner()
+    for command in (["node", "list"], ["consensus", "finalize"], ["help"], ["web"]):
+        calls.clear()
+        result = runner.invoke(app, [*command, "--repo-dir", str(repo)])
+        assert result.exit_code == 0, result.output
+        assert calls == ([repo, "serve"] if command == ["web"] else [repo])
+    expected = Failure(FailureReason.CONFLICT_CHANGE, "conflict change")
+    result = runner.invoke(app, ["issue", "new", "local work", "--repo-dir", str(repo)])
+    assert result.exit_code == 1 and "conflict_change" in result.stderr
+    assert json.loads(result.stdout)["title"] == "local work"
+    assert "local work" in git(repo, "log", "-1", "--format=%s", GC_REF)

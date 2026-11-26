@@ -14,7 +14,7 @@ from pygc.library.constants import GC_REF
 def test_node_commands(repo, monkeypatch):  # noqa: F811
     # The CLI selects the explicit repository and appends to the initialized tree.
     runner = CliRunner()
-    args = ["--repo-dir", str(repo)]
+    args = ["-do-not-finalize", "--repo-dir", str(repo)]
     assert list_nodes(repo).reason == FailureReason.NOT_INITIALIZED
     parent = initialize_gc(repo).value
     assert json.loads(runner.invoke(app, ["node", "list", *args]).stdout) == []
@@ -32,7 +32,7 @@ def test_node_commands(repo, monkeypatch):  # noqa: F811
     # Default cwd and local paths work too. Ordering is independent of insertion.
     monkeypatch.chdir(repo)
     assert add_node("alpha", "/shared/repo") == Success(Node("alpha", "/shared/repo"))
-    assert json.loads(runner.invoke(app, ["node", "list"]).stdout) == [
+    assert json.loads(runner.invoke(app, ["node", "list", "-do-not-finalize"]).stdout) == [
         {"name": "alpha", "url": "/shared/repo"},
         {"name": "team two", "url": url},
     ]

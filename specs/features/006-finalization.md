@@ -3,7 +3,7 @@
 State: verified
 
 Implement the README consensus procedure through a synchronous Python operation
-and `gc consensus finalize [--repo-dir PATH]`. Automatic triggers, PR merging,
+and `gc consensus finalize [--repo-dir PATH]`. CLI commands also follow the [automatic finalization contract](../changes/2026-11-25-command-finalization.md). PR merging,
 and RPC exposure are outside this command.
 
 - FIN-001. Snapshot the metadata tip and sorted registry once. Push only the

@@ -3,7 +3,7 @@
 Git-centric operations return algebraic result values instead of throwing.
 """
 
-from .consensus import Finalization, finalize
+from .consensus import Finalization, defer_finalization, finalize
 from .initialization import initialize_gc, is_gc_initialized
 from .issues import (
     Issue,
@@ -38,6 +38,7 @@ from .result import Failure, FailureReason, Result, Success
 
 __all__ = [
     "Finalization",
+    "defer_finalization",
     "finalize",
     "Node",
     "add_node",

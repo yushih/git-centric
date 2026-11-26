@@ -22,7 +22,8 @@ def test_library_greeting_and_removed_cli() -> None:
         greet(" ")
 
 
-def test_help_and_web() -> None:
+def test_help_and_web(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
     # Both help spellings must list commands; web options must be forwarded to Uvicorn.
     for args in (["help"], ["--help"]):
         result = runner.invoke(app, args)

@@ -74,7 +74,7 @@ a warning is printed to stderr; the explicit option wins. Subdirectories,
 symlink aliases and linked worktrees of the same repository do not warn.
 An invalid explicit path fails without falling back to the current directory.
 The legacy `gc init DIRECTORY` form remains supported; `--repo-dir` overrides it.
-`help` and `web` accept the option but perform no repository operations.
+`help` and `web` also use the selected repository for finalization.
 
 Use `uv run gc` if the virtual environment is not activated. Initialization
 does not create a Git repository: use `git init` first if needed. Worktree
@@ -133,6 +133,20 @@ Registration stores the endpoint locally on the metadata branch under
 
 ### Finalize metadata
 
+Every successful CLI command, including reads, runs one finalization round in
+the selected repository. `gc web` finalizes before starting the server.
+Pass `-do-not-finalize` (also `--do-not-finalize`) before the command or on its
+leaf to skip peer contact and add the Git note `not finalized` to the current
+local metadata tip. Repeating the flag on subsequent invocations preserves
+existing annotations without duplicating the note.
+
+```sh
+gc issue new "Fix login" -do-not-finalize
+gc -do-not-finalize node list
+```
+
+Ordinary commands keep their usual stdout and send finalization warnings to stderr.
+A finalization failure exits 1 and any completed local write remains in history.
 Run `gc consensus finalize` to push the local metadata branch to registered
 nodes. Use `--repo-dir PATH` to select the repository. Git 2.38+ supports
 checkout-free reconciliation of divergent histories. A clean local merge counts

@@ -10,10 +10,10 @@ from git import Repo
 from git.exc import GitCommandError
 
 from .constants import FINALIZE_TEMP_PREFIX, GC_REF, GIT_NOTES_REF
-from .initialization import _branch_oid, _git, _git_result, _has_gc_directory
+from .initialization import _branch_oid, _failure, _git, _git_result, _has_gc_directory
 from .metadata import _reject, publish_commit
 from .nodes import Node, _Registry, _run
-from .result import FailureReason, Result
+from .result import Failure, FailureReason, Result, Success
 
 
 @dataclass(frozen=True)
@@ -215,3 +215,18 @@ def finalize(directory: str | Path = ".") -> Result[Finalization]:
             return _finalize(registry)
 
     return _run(directory, run)
+
+
+def defer_finalization(directory: str | Path = ".") -> Result[Finalization]:
+    """Mark the current local metadata tip, independently of the peer registry."""
+    try:
+        with Repo(
+            Path(directory).absolute(), search_parent_directories=True, expand_vars=False
+        ) as repo:
+            tip = _branch_oid(repo)
+            if tip is None or not _has_gc_directory(repo, tip):
+                return Failure(FailureReason.NOT_INITIALIZED, "Run gc init first")
+            _mark_unfinalized(repo, tip)
+            return Success(Finalization(False, tip, (), (), ()))
+    except Exception as exc:
+        return _failure(exc)
