@@ -438,6 +438,10 @@ remain `from pygc import greet`. Editable installs use the same mapping.
 Only explicitly registered functions are callable through RPC. Synchronous
 library calls run in a worker thread, keeping the server event loop available.
 
+The web UI previews permission to create issues, post issue comments, create roles,
+and remove each registered node. A denied control is grayed out. Actions that
+depend on unfinished input report policy denials when submitted and retain drafts.
+
 The library checks the write actions listed in the root README through `pygc.library.policy.check_action`.
 It currently permits every action. A checker can return
 `Failure(FailureReason.ACCESS_DENIED, detail)` to deny a call. The root README

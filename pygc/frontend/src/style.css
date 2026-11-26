@@ -291,3 +291,12 @@ button:disabled {
 .finalization summary {
   cursor: pointer;
 }
+
+button:disabled,
+input:disabled,
+textarea:disabled {
+  background-color: #eef0f2;
+  color: #59636e;
+  border-color: #c8cdd2;
+  cursor: not-allowed;
+}

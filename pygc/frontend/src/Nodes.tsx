@@ -1,10 +1,12 @@
-import { useState } from "react";
-import { call, type RegistryNode } from "./rpc";
+import { useMemo, useState } from "react";
+import { call, type PreviewAction, type RegistryNode } from "./rpc";
 import { useRegistry, type Save } from "./useRegistry";
+
+import { PreviewStatus, usePermissions } from "./Permissions";
 
 const readNodes = () => call("nodes.list", {});
 
-function NodeRow({ node, tip, save }: { node: RegistryNode; tip: string; save: Save }) {
+function NodeRow({ node, tip, save, mayRemove }: { node: RegistryNode; tip: string; save: Save; mayRemove?: boolean }) {
   // Keep the operator's draft separate from the committed URL shown after reload.
   const [draft, setDraft] = useState<string | null>(null);
   return <article className="content">
@@ -12,10 +14,11 @@ function NodeRow({ node, tip, save }: { node: RegistryNode; tip: string; save: S
     <p className="prose">{node.url}</p>
     {draft === null ? <div className="controls">
       <button onClick={() => setDraft(node.url)}>Edit URL</button>
-      <button onClick={() => {
+      <button disabled={mayRemove !== true} onClick={() => {
         if (window.confirm(`Remove node “${node.name}” at ${node.url}?`))
           void save(() => call("nodes.remove", { name: node.name, expectedTip: tip }));
       }}>Remove node</button>
+      {mayRemove === false && <small>Repository policy prevents removing this node.</small>}
     </div> : <form onSubmit={event => {
       event.preventDefault();
       void save(() => call("nodes.change_url", { name: node.name, url: draft, expectedTip: tip }),
@@ -36,11 +39,15 @@ export function Nodes({ onName, onSaved }: { onName: (name: string) => void; onS
       invalid_argument: "Enter a valid node name and Git endpoint.",
       not_found: "This node no longer exists. Reload the list.",
     });
+  const actions = useMemo<PreviewAction[]>(() => (snapshot?.nodes ?? []).map(node =>
+    ({ name: "nodes.remove", node_id: node.name, url: node.url })), [snapshot]);
+  const preview = usePermissions(actions, snapshot?.metadata_tip ?? "");
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
 
   return <section aria-label="Participating nodes">
     <h2>Participating nodes</h2>
+    <PreviewStatus preview={preview} />
     {error && <p role="alert">{error} <button disabled={loading || saving} onClick={reload}>Reload</button></p>}
     {loading && <p role="status">Loading nodes…</p>}
     <fieldset disabled={loading || saving || review}>
@@ -59,7 +66,7 @@ export function Nodes({ onName, onSaved }: { onName: (name: string) => void; onS
           <button className="primary">Add node</button>
         </form>
         {!snapshot.nodes.length && <p>No nodes registered.</p>}
-        {snapshot.nodes.map(node => <NodeRow key={node.name} node={node} tip={snapshot.metadata_tip} save={save} />)}
+        {snapshot.nodes.map((node, index) => <NodeRow key={node.name} node={node} tip={snapshot.metadata_tip} save={save} mayRemove={preview.decisions?.[index]} />)}
       </>}
     </fieldset>
   </section>;

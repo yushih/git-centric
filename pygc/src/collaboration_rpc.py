@@ -10,6 +10,7 @@ from typing import Annotated, Any, Literal
 from pydantic import ConfigDict, Field, validate_call
 
 from . import library as lib
+from .library import policy
 from .library.constants import GC_BRANCH, PR_TITLE_SEPARATOR
 from .library.nodes import get_node_snapshot
 
@@ -96,6 +97,14 @@ def collaboration_methods(directory: Path) -> dict[str, Callable[..., Any]]:
     def role_unassign(user: str, role: str, expectedTip: Tip) -> Any:
         return result(lib.unassign_role(user, role, directory, expected_tip=expectedTip))
 
+    def preview(actions: list[policy.Simple | policy.NodeTarget]) -> list[bool]:
+        # Preview only actions the UI can fully describe before editing. The
+        # mutation independently constructs its action from the actual write.
+        supported = {"issues.create", "issues.comments.add", "access.roles.create", "nodes.remove"}
+        if any(action.name not in supported for action in actions):
+            raise ValueError("Unsupported preview action")
+        return [policy.check_action(action) is True for action in actions]
+
     def nodes_list() -> Any:
         return result(get_node_snapshot(directory))
 
@@ -109,6 +118,7 @@ def collaboration_methods(directory: Path) -> dict[str, Callable[..., Any]]:
         return result(lib.remove_node(name, directory, expected_tip=expectedTip))
 
     methods: dict[str, Callable[..., Any]] = {
+        "permissions.preview": checked(preview),
         "nodes.list": checked(nodes_list),
         "nodes.add": checked(node_add),
         "nodes.change_url": checked(node_change),

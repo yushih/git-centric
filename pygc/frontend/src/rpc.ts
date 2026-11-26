@@ -125,7 +125,12 @@ const accessRole = (v: unknown) => record(v) && typeof v.name === "string" && ty
 export type RegistryNode = { name: string; url: string };
 export type NodeSnapshot = { metadata_tip: string; nodes: RegistryNode[] };
 const registryNode = (v: unknown) => record(v) && typeof v.name === "string" && typeof v.url === "string";
-type Methods = Endpoint<"nodes.list", Record<string, never>, NodeSnapshot> &
+export type PreviewAction =
+  | { name: "issues.create" | "issues.comments.add" | "access.roles.create" }
+  | { name: "nodes.remove"; node_id: string; url: string };
+
+type Methods = Endpoint<"permissions.preview", { actions: readonly PreviewAction[] }, boolean[]> &
+  Endpoint<"nodes.list", Record<string, never>, NodeSnapshot> &
   Endpoint<"nodes.add" | "nodes.change_url", Conditional & RegistryNode, RegistryNode> &
   Endpoint<"nodes.remove", Conditional & { name: string }, RegistryNode> &
   Endpoint<"access.get", Record<string, never>, AccessSnapshot> &
@@ -259,6 +264,9 @@ export async function call<K extends keyof Methods>(
     typeof c.text === "string" &&
     strings(c.replies_to);
   function validResult() {
+    if (method === "permissions.preview")
+      return "actions" in params && Array.isArray(v) && v.length === params.actions.length
+        && v.every(decision => typeof decision === "boolean");
     if (method === "nodes.list")
       return record(v) && typeof v.metadata_tip === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(v.metadata_tip)
         && Array.isArray(v.nodes) && v.nodes.every(registryNode);

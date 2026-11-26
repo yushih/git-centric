@@ -133,3 +133,14 @@ it("rejects node lists containing an incomplete endpoint", async () => {
   });
   await expect(call("nodes.list", {})).rejects.toThrow("Invalid JSON-RPC result");
 });
+
+it("requires one boolean preview decision per submitted action", async () => {
+  const params = { actions: [{ name: "issues.create" }] } as const;
+  for (const result of [[], [true, false], ["false"], [null]]) {
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      const { id } = JSON.parse(init.body as string);
+      return Response.json({ jsonrpc: "2.0", id, result });
+    });
+    await expect(call("permissions.preview", params)).rejects.toThrow("Invalid JSON-RPC result");
+  }
+});

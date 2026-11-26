@@ -1,7 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { call, RpcError, type Detail, type Item, type Tab } from "./rpc";
 
+import { addIssueComment, createIssue, noActions, PreviewStatus, usePermissions } from "./Permissions";
+
 function message(e: unknown) {
+  if (e instanceof RpcError && e.reason === "access_denied")
+    return "Repository policy denied this change.";
   if (e instanceof RpcError && e.reason === "stale_snapshot")
     return "This view has changed. Reload the conversation and review your draft.";
   return e instanceof RpcError && e.reason
@@ -61,6 +65,9 @@ export function Collaboration({
     [version, reload] = useState(0);
   const [editor, edit] = useState(""),
     [draft, write] = useState("");
+  const actions = !initialized || pulls ? noActions : creating || !id ? createIssue : addIssueComment;
+  const preview = usePermissions(actions, version);
+  const restricted = actions.length > 0 && preview.decisions?.[0] !== true;
   const [patch, setPatch] = useState("");
   const pinnedBase = q.get("baseTip"),
     pinnedCompare = q.get("compareTip");
@@ -185,18 +192,19 @@ export function Collaboration({
     key: string,
     action: () => Promise<unknown>,
     label: string,
+    disabled = false,
   ) {
     return (
       editor === key && (
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            void save(action);
+            if (!disabled) void save(action);
           }}
         >
           <label>
             {label}
-            <textarea
+            <textarea disabled={disabled}
               autoFocus
               aria-label={label}
               value={draft}
@@ -204,7 +212,7 @@ export function Collaboration({
             />
           </label>
           <div className="controls">
-            <button className="primary">Save</button>
+            <button className="primary" disabled={disabled}>Save</button>
             <button type="button" onClick={() => edit("")}>
               Cancel
             </button>
@@ -248,7 +256,7 @@ export function Collaboration({
             {c.text || (c.id === "main" ? "" : "Empty comment.")}
           </p>
           <div className="controls">
-            <button onClick={() => start("reply-" + c.id)}>Reply</button>
+            <button disabled={restricted} onClick={() => start("reply-" + c.id)}>Reply</button>
             <button onClick={() => start("edit-" + c.id, c.text)}>Edit</button>
             {c.id !== "main" && (
               <button
@@ -284,7 +292,7 @@ export function Collaboration({
                 text: draft,
                 repliesTo: [c.id],
               }),
-            "Reply",
+            "Reply", restricted,
           )}
           {thread(c.id)}
         </section>
@@ -304,12 +312,15 @@ export function Collaboration({
             )}
           </h1>
           {initialized && !creating && !id && (
+            restricted ? <button className="primary" disabled>New {noun}</button> :
             <a className="primary" href={link({ new: "1" })}>
               New {noun}
             </a>
           )}
         </div>
       )}
+      <PreviewStatus preview={preview} />
+      {preview.decisions?.[0] === false && <p>Repository policy prevents {actions === addIssueComment ? "posting issue comments" : "creating issues"}.</p>}
       {error && (
         <p role="alert">
           {error}{" "}
@@ -349,6 +360,7 @@ export function Collaboration({
               <form
                 onSubmit={(e) => {
                   const f = fields(e);
+                  if (restricted) return;
                   void save(async () => {
                     const item = await call(`${tab}.create`, {
                       title: f.title,
@@ -362,17 +374,17 @@ export function Collaboration({
                 {pulls && selects()}
                 <label>
                   Title
-                  <input required name="title" />
+                  <input disabled={restricted} required name="title" />
                 </label>
                 <label>
                   Description
-                  <textarea name="description" />
+                  <textarea disabled={restricted} name="description" />
                 </label>
                 {pulls && branches.length < 2 && (
                   <p>Create two source branches to open a pull request.</p>
                 )}
                 <button
-                  disabled={pulls && branches.length < 2}
+                  disabled={restricted || (pulls && branches.length < 2)}
                   className="primary"
                 >
                   Create {noun}
@@ -535,7 +547,7 @@ export function Collaboration({
                 ) : (
                   <>
                     {thread(null)}
-                    <button onClick={() => start("add")}>Add comment</button>
+                    <button disabled={restricted} onClick={() => start("add")}>Add comment</button>
                     {composer(
                       "add",
                       () =>
@@ -544,7 +556,7 @@ export function Collaboration({
                           text: draft,
                           repliesTo: [],
                         }),
-                      "Comment",
+                      "Comment", restricted,
                     )}
                   </>
                 )}

@@ -248,3 +248,33 @@ def test_node_registry_rpc(repo, monkeypatch):  # noqa: F811
         "reason": "access_denied"
     }
     assert rpc("nodes.list")["result"] == {"metadata_tip": current, "nodes": [mutation]}
+
+
+def test_permission_preview_and_write_recheck(repo, monkeypatch):  # noqa: F811
+    # One denied row must not mask an allowed sibling. Preview uses no writer and
+    # a previously positive decision grants no authority to the subsequent write.
+    from pygc import Failure, FailureReason
+    from pygc.library import policy
+
+    methods = repository_methods(repo)
+
+    def rpc(method, **params):
+        return dispatch(dict(jsonrpc="2.0", id=1, method=method, params=params), methods)
+
+    tip = rpc("repo.initialize")["result"]
+    denial = Failure(FailureReason.ACCESS_DENIED, "denied")
+    observed = []
+
+    def check(action):
+        observed.append(action)
+        return denial if getattr(action, "node_id", None) == "keep" else True
+
+    monkeypatch.setattr(policy, "check_action", check)
+    actions = [{"name": "nodes.remove", "node_id": n, "url": n + ".git"} for n in ("keep", "old")]
+    actions.append({"name": "issues.create"})
+    assert rpc("permissions.preview", actions=actions)["result"] == [False, True, True]
+    assert [a.model_dump() for a in observed] == actions
+    assert rpc("permissions.preview", actions=[{"name": "nodes.remove"}])["error"]["code"] == -32602
+    monkeypatch.setattr(policy, "check_action", lambda _: denial)
+    assert rpc("issues.create", title="Late denial")["error"]["data"] == {"reason": "access_denied"}
+    assert git(repo, "rev-parse", GC_REF) == tip

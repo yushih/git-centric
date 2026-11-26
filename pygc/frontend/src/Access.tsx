@@ -1,7 +1,9 @@
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { call, type AccessRole, type AccessSnapshot } from "./rpc";
 
 import { useRegistry, type Save } from "./useRegistry";
+
+import { createRole, noActions, PreviewStatus, usePermissions } from "./Permissions";
 
 const readAccess = () => call("access.get", {});
 
@@ -48,13 +50,16 @@ export function Access({usersView, onName, onSaved}: {
       invalid_argument: "Check the name, public key, or role membership and try again.",
       not_found: "The selected user or role could not be found.",
     });
+  const actions = useMemo(() => snapshot && !usersView ? [...createRole] : noActions, [snapshot, usersView]);
+  const preview = usePermissions(actions, snapshot?.metadata_tip ?? "");
+  const restricted = !usersView && preview.decisions?.[0] !== true;
   const [roleName, setRoleName] = useState("");
   const [metadata, setMetadata] = useState("");
   const [userName, setUserName] = useState("");
   const [key, setKey] = useState("");
   function create(event: FormEvent) {
     event.preventDefault();
-    if (!snapshot) return;
+    if (!snapshot || restricted) return;
     const expectedTip = snapshot.metadata_tip;
     if (usersView) {
       void save(() => call("access.users.add", {name: userName, publicKey: key, expectedTip}),
@@ -70,6 +75,8 @@ export function Access({usersView, onName, onSaved}: {
       <a href="#access" aria-current={!usersView ? "page" : undefined}>Roles</a>
       <a href="#access?view=users" aria-current={usersView ? "page" : undefined}>Users</a>
     </nav>
+    <PreviewStatus preview={preview} />
+    {preview.decisions?.[0] === false && <p>Repository policy prevents creating roles.</p>}
     {error && <p role="alert">{error} <button disabled={loading || saving} onClick={reload}>Reload</button></p>}
     {loading && <p role="status">Loading access records…</p>}
     <fieldset disabled={saving || loading || review}>
@@ -84,10 +91,10 @@ export function Access({usersView, onName, onSaved}: {
             <label>User name<input required value={userName} onChange={e => setUserName(e.target.value)} /></label>
             <label>OpenSSH Ed25519 public key<textarea required value={key} onChange={e => setKey(e.target.value)} /></label>
           </> : <>
-            <label>Role name<input required value={roleName} onChange={e => setRoleName(e.target.value)} /></label>
-            <label>Metadata (optional)<textarea value={metadata} onChange={e => setMetadata(e.target.value)} /></label>
+            <label>Role name<input disabled={restricted} required value={roleName} onChange={e => setRoleName(e.target.value)} /></label>
+            <label>Metadata (optional)<textarea disabled={restricted} value={metadata} onChange={e => setMetadata(e.target.value)} /></label>
           </>}
-          <button className="primary">{usersView ? "Register user" : "Create role"}</button>
+          <button className="primary" disabled={restricted}>{usersView ? "Register user" : "Create role"}</button>
         </form>
         {usersView ? <>
           {!snapshot.users.length && <p>No registered users.</p>}

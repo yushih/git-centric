@@ -113,3 +113,12 @@ presentation. Show Edit and Close/Reopen beside the issue state. The opening
 message is unlabeled. Replies show their original author and timestamp;
 secondary reply links use human-readable labels. issues.show includes author
 and created_at on each comment, following its stable ID through metadata history.
+
+## Permission previews
+
+Before enabling issue creation, issue commenting/replies, role creation or a
+specific node removal, obtain a decision from permissions.preview({actions}).
+The read-only RPC returns ordered booleans, one per UI action. Node removal
+includes the displayed node ID and URL. Keep affected controls disabled while
+loading or on preview failure, provide retry, and explain denied actions. Reads
+and input-dependent controls stay available. Every mutation checks policy again.
