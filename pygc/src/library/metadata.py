@@ -57,11 +57,17 @@ def _write_tree(repo: Repo, entries: Entries) -> tuple[str, str, str]:
     return GIT_DIRECTORY_MODE, "tree", _git(repo, "mktree", "-z", stdin=data)
 
 
-def _blob(repo: Repo, text: str) -> tuple[str, str, str]:
+def _blob(repo: Repo, text: str | bytes) -> tuple[str, str, str]:
     return (
         GIT_REGULAR_FILE_MODE,
         "blob",
-        _git(repo, "hash-object", "-w", "--stdin", stdin=text.encode()),
+        _git(
+            repo,
+            "hash-object",
+            "-w",
+            "--stdin",
+            stdin=text.encode() if isinstance(text, str) else text,
+        ),
     )
 
 

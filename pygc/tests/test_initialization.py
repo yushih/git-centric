@@ -45,6 +45,9 @@ def assert_initial_commit(repo: Path, oid: str) -> None:
     # rev-list emits only the commit itself if and only if there are no parents.
     assert git(repo, "rev-list", "--parents", "-n", "1", GC_REF) == oid
     assert git(repo, "ls-tree", "--name-only", GC_REF) == GC_DIRECTORY
+    library = Path(initialization.__file__).parent
+    sources = [library / "actions.py", *sorted(library.glob("rule-*.py"))]
+    rules_path = f"{GC_DIRECTORY}/access/rules"
     assert git(repo, "ls-tree", "-r", "--name-only", GC_REF) == (
         f"{GC_DIRECTORY}/{GC_KEEP_FILE}\n"
         + "".join(
@@ -52,8 +55,17 @@ def assert_initial_commit(repo: Path, oid: str) -> None:
             for role in ("admin", "ci", "merger", "owner")
         )
         + f"{GC_DIRECTORY}/access-control/users/GC tests/pk-Ed25519\n"
-        + f"{GC_DIRECTORY}/access-control/users/GC tests/roles/owner"
+        + f"{GC_DIRECTORY}/access-control/users/GC tests/roles/owner\n"
+        + "\n".join(f"{rules_path}/{source.name}" for source in sources)
     )
+    for source in sources:
+        # Compare raw blob bytes, including source encoding and final newlines.
+        assert (
+            subprocess.check_output(
+                ["git", "-C", str(repo), "cat-file", "blob", f"{oid}:{rules_path}/{source.name}"]
+            )
+            == source.read_bytes()
+        )
     assert git(repo, "show", f"{GC_REF}:{GC_DIRECTORY}/{GC_KEEP_FILE}") == ""
     assert is_gc_initialized(repo) == Success(True)
 

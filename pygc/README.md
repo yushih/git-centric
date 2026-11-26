@@ -448,8 +448,8 @@ On the metadata branch, commit trusted Python files under
 `eval(action, user, roles)`. The action is a typed object with a `name` and
 action-specific fields. The user is the effective Git author name. Roles are
 a sorted tuple of registered memberships, empty for an unknown user.
-Copy the [no-op rule template](src/library/rule-noop.py) to start with a rule
-that abstains for every action. For example, a rule can grant issue creation to owners
+`gc init` copies the bundled `rule-*.py` files and `actions.py` into that directory.
+The [no-op rule template](src/library/rule-noop.py) abstains for every action. For example, a rule can grant issue creation to owners
 and abstain otherwise.
 
 ```python
@@ -461,8 +461,7 @@ def eval(action, user, roles):
 
 Rules run as Python code with the permissions of the process performing the
 check, including during web permission previews. Only a grant with no deny or
-error permits a protected write. A fresh repository has no rules and denies
-protected writes until a rule grants access. Public reads remain available.
+error permits a protected write. When all rules abstain, protected writes are denied. Public reads remain available.
 
 ## Checks and packaging
 

@@ -14,6 +14,7 @@ from git.exc import GitError, InvalidGitRepositoryError, NoSuchPathError
 from . import policy
 from .constants import (
     ACCESS_DIRECTORY,
+    ACTIONS_FILE,
     DEFAULT_ROLES,
     GC_DIRECTORY,
     GC_INITIAL_COMMIT_MESSAGE,
@@ -21,7 +22,10 @@ from .constants import (
     GC_REF,
     GIT_DIRECTORY_MODE,
     OWNER_ROLE,
+    POLICY_DIRECTORY,
     ROLES_DIRECTORY,
+    RULE_PATTERN,
+    RULES_DIRECTORY,
     USERS_DIRECTORY,
 )
 from .result import Failure, FailureReason, Result, Success
@@ -141,7 +145,7 @@ def initialize_gc(directory: str | Path = ".") -> Result[str]:
     be silently reset. Git's normal author/committer configuration is used, and
     missing identity or object-write failures are returned as GIT_ERROR.
 
-    The orphan commit contains the metadata marker, initial owner identity and default roles.
+    The orphan commit contains the marker, owner identity, default roles and policy files.
     HEAD, the index, and worktree files are untouched.
     """
     try:
@@ -178,7 +182,16 @@ def initialize_gc(directory: str | Path = ".") -> Result[str]:
             user = _write_tree(repo, creator)
             users = _write_tree(repo, {author: user})
             access = _write_tree(repo, {USERS_DIRECTORY: users, ROLES_DIRECTORY: roles})
-            directory_tree = _write_tree(repo, {GC_KEEP_FILE: empty, ACCESS_DIRECTORY: access})
+            # Read the installed sources as bytes so Git stores the original file contents.
+            library = Path(__file__).parent
+            sources = [library / ACTIONS_FILE, *sorted(library.glob(RULE_PATTERN))]
+            rules = _write_tree(
+                repo, {source.name: _blob(repo, source.read_bytes()) for source in sources}
+            )
+            policies = _write_tree(repo, {RULES_DIRECTORY: rules})
+            directory_tree = _write_tree(
+                repo, {GC_KEEP_FILE: empty, ACCESS_DIRECTORY: access, POLICY_DIRECTORY: policies}
+            )
             root_tree = _write_tree(repo, {GC_DIRECTORY: directory_tree})[2]
 
             # Omitting every -p argument is what makes this an orphan commit.
@@ -190,7 +203,8 @@ def initialize_gc(directory: str | Path = ".") -> Result[str]:
                 root_tree,
                 "-m",
                 f"{GC_INITIAL_COMMIT_MESSAGE}, create roles {', '.join(DEFAULT_ROLES)}, "
-                f"and register {author} as {OWNER_ROLE}",
+                f"register {author} as {OWNER_ROLE}, and install policy files in "
+                f"{POLICY_DIRECTORY}/{RULES_DIRECTORY}",
             )
 
             # 'create' asserts absence inside Git's ref transaction, closing the

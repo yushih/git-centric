@@ -46,3 +46,5 @@ DEFAULT_ROLES = (OWNER_ROLE, "admin", "ci", "merger")
 POLICY_DIRECTORY = "access"
 RULES_DIRECTORY = "rules"
 RULE_PATTERN = "rule-*.py"
+
+ACTIONS_FILE = "actions.py"

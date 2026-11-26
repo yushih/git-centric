@@ -162,10 +162,6 @@ def test_committed_rules(repo):  # noqa: F811
 
     lib.initialize_gc(repo)
     action = policy.Simple(name="issues.create")
-    # A fresh metadata branch has no rules directory at all.
-    assert policy.check_action(action, repo) == lib.Failure(
-        lib.FailureReason.ACCESS_DENIED, "No policy rule result"
-    )
     cases = [
         ([], "No policy rule result"),
         (["None"], "No policy rule result"),
