@@ -2,11 +2,25 @@
 
 from fnmatch import fnmatchcase
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 from git import Repo
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import TypeAdapter
 
+# Keep existing policy imports available to callers and committed rule scripts.
+from .actions import (
+    Action,
+    Fields,
+    NodeTarget,
+    PullCreate,
+    PullMerge,
+    RegisterNode,
+    RegisterUser,
+    RoleMetadata,
+    Simple,
+    UserRoles,
+    UserTarget,
+)
 from .constants import (
     ACCESS_DIRECTORY,
     GC_DIRECTORY,
@@ -21,75 +35,24 @@ from .constants import (
 )
 from .result import Failure, FailureReason
 
-
-class Fields(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
-
-
-class Simple(Fields):
-    name: Literal[
-        "issues.create", "issues.comments.add", "access.roles.create", "policy.scripts.change"
-    ]
-
-
-class PullCreate(Fields):
-    name: Literal["pulls.create"]
-    base: str
-    compare: str
-
-
-class PullMerge(Fields):
-    name: Literal["pulls.merge"]
-    id: str
-    base: str
-
-
-class RoleMetadata(Fields):
-    name: Literal["access.roles.change_metadata"]
-    role: str
-    new_metadata: str
-
-
-class RegisterUser(Fields):
-    name: Literal["access.users.add"]
-    user: str
-    roles: tuple[str, ...]
-
-
-class UserTarget(Fields):
-    name: Literal["access.users.delete", "access.users.change_public_key"]
-    user: str
-
-
-class UserRoles(Fields):
-    name: Literal["access.users.change_roles"]
-    user: str
-    new_roles: tuple[str, ...]
-
-
-class RegisterNode(Fields):
-    name: Literal["nodes.add"]
-    url: str
-
-
-class NodeTarget(Fields):
-    name: Literal["nodes.change_url", "nodes.remove"]
-    node_id: str
-    url: str  # Proposed endpoint on update, stored endpoint on removal.
-
-
-Action = Annotated[
-    Simple
-    | PullCreate
-    | PullMerge
-    | RoleMetadata
-    | RegisterUser
-    | UserTarget
-    | UserRoles
-    | RegisterNode
-    | NodeTarget,
-    Field(discriminator="name"),
+__all__ = [
+    "Action",
+    "Denied",
+    "Fields",
+    "NodeTarget",
+    "PullCreate",
+    "PullMerge",
+    "RegisterNode",
+    "RegisterUser",
+    "RoleMetadata",
+    "Simple",
+    "UserRoles",
+    "UserTarget",
+    "check_action",
+    "policy_action",
+    "require",
 ]
+
 # Pydantic accepts discriminated unions here as well as concrete model classes.
 policy_action: TypeAdapter[Action] = TypeAdapter(Action)  # type: ignore[arg-type]
 

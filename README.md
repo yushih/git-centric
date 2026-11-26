@@ -324,7 +324,7 @@ Every successful CLI command finalizes by default. Pass `-do-not-finalize` or
 
 ## Access control
 
-The access control works by evaluating Python programs againt the action initiator, the action name and detailed action parameters. The default implementation comes with a role-based access control (RBAC) mechanics. Conceptually, whether an action can be performed is determined the boolean outcome of the function: 
+The access control works by evaluating rules in Python againt the action initiator, the action name and detailed action parameters. The default implementation comes with a role-based access control (RBAC) mechanics. Conceptually, whether an action can be performed is determined the boolean outcome of the function: 
 
 ```EvalPython(Python program, user, user's role, role's metadata, action name, action parameters)```
 
@@ -372,7 +372,7 @@ change user roles|user name, new roles|
 add node|new node URL|
 change node URL|node ID, node URL|
 remove node|node ID, node URL|
-change the policy scripts||
+change the rule scripts||
 
 ### Rules
 
