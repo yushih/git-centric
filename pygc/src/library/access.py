@@ -144,7 +144,11 @@ class _Registry:
         initial = tuple(sorted(set(roles)))
         for role in initial:
             self.role(role)
-        policy.require(policy.RegisterUser(name="access.users.add", user=name, roles=initial))
+        policy.require(
+            policy.RegisterUser(name="access.users.add", user=name, roles=initial),
+            self.repo,
+            self.parent,
+        )
         entry = user_tree(self.repo, key)
         if initial:
             marker = _blob(self.repo, "")
@@ -164,7 +168,7 @@ class _Registry:
         validate_name(name)
         if name in self.roles:
             _reject(FailureReason.ID_CONFLICT, f"Role already exists: {name}")
-        policy.require(policy.Simple(name="access.roles.create"))
+        policy.require(policy.Simple(name="access.roles.create"), self.repo, self.parent)
         self.roles[name] = _blob(self.repo, metadata)
         self.save(ROLES_DIRECTORY, self.roles, f"create role {name}")
         return Role(name, metadata, [])
@@ -182,7 +186,9 @@ class _Registry:
         policy.require(
             policy.RoleMetadata(
                 name="access.roles.change_metadata", role=name, new_metadata=metadata
-            )
+            ),
+            self.repo,
+            self.parent,
         )
         if metadata != role.metadata:
             self.roles[name] = _blob(self.repo, metadata)
@@ -195,7 +201,9 @@ class _Registry:
             _reject(FailureReason.NOT_FOUND, f"Unknown user: {name}")
         previous = self.keys[name]
         if key is None:
-            policy.require(policy.UserTarget(name="access.users.delete", user=name))
+            policy.require(
+                policy.UserTarget(name="access.users.delete", user=name), self.repo, self.parent
+            )
             del self.users[name]
             self.save(USERS_DIRECTORY, self.users, f"delete user {name}")
             return User(name, previous)
@@ -203,7 +211,11 @@ class _Registry:
             key = public_key(key)
         except ValueError as exc:
             _reject(FailureReason.INVALID_ARGUMENT, str(exc))
-        policy.require(policy.UserTarget(name="access.users.change_public_key", user=name))
+        policy.require(
+            policy.UserTarget(name="access.users.change_public_key", user=name),
+            self.repo,
+            self.parent,
+        )
         if key != previous:
             entry = _subtree(self.repo, self.users, name)
             entry[PUBLIC_KEY_FILE] = _blob(self.repo, key + "\n")
@@ -232,7 +244,9 @@ class _Registry:
                     name="access.users.change_roles",
                     user=target,
                     new_roles=tuple(sorted(resulting)),
-                )
+                ),
+                self.repo,
+                self.parent,
             )
         for target in changed:
             entry = _subtree(self.repo, self.users, target)

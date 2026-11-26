@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from policy_setup import grant_writes
 from test_initialization import git, isolated_git_config, repo  # noqa: F401
 from typer.testing import CliRunner
 
@@ -33,6 +34,7 @@ def diverge(local: Path, other: Path, conflict: bool) -> None:
 def test_no_finality_cli(repo):  # noqa: F811
     # Zero voters and an unreachable voter both leave one idempotent local note.
     initialize_gc(repo)
+    grant_writes(repo)
     runner = CliRunner()
 
     def invoke():
@@ -54,6 +56,7 @@ def test_no_finality_cli(repo):  # noqa: F811
 def test_clean_merge_and_next_push(repo):  # noqa: F811
     # The reconciled tip feeds subsequent peers; user index/worktree stay intact.
     initialize_gc(repo)
+    grant_writes(repo)
     first = peer(repo, "a-peer")
     last = peer(repo, "z-peer")
     diverge(repo, first, False)
@@ -79,6 +82,7 @@ def test_conflict_outcomes(repo, extra):  # noqa: F811
     # Set up one conflicting peer, then configure enough successful voters
     # to test a conflict majority, a tie and a success majority.
     initialize_gc(repo)
+    grant_writes(repo)
     other = peer(repo, "opponent")
     for index in range(extra):
         peer(repo, f"support-{index}")
@@ -119,6 +123,7 @@ def test_concurrent_local_write(repo, monkeypatch):  # noqa: F811
     from pygc.library import consensus
 
     initialize_gc(repo)
+    grant_writes(repo)
     peer(repo, "first")
     push = consensus._push
 
@@ -143,6 +148,7 @@ def test_command_completion_uses_current_metadata_tip(repo, tmp_path):  # noqa: 
     git(remote, "init", "--bare")
     assert runner.invoke(app, ["init", str(repo), "-do-not-finalize"]).exit_code == 0
     assert git(repo, "notes", "show", GC_REF) == "not finalized"
+    grant_writes(repo)
     assert runner.invoke(app, ["node", "add", "peer", str(remote), *args]).exit_code == 0
     old = git(repo, "rev-parse", GC_REF)
     assert git(remote, "rev-parse", GC_REF) == old
@@ -176,6 +182,7 @@ def test_cli_runs_one_round_and_surfaces_failure(repo, monkeypatch):  # noqa: F8
     from pygc import Failure, cli
 
     initialize_gc(repo)
+    grant_writes(repo)
     calls = []
     expected = finalize(repo)
 

@@ -12,6 +12,7 @@ GC_INITIAL_COMMIT_MESSAGE = "initialize Git-centric metadata"
 
 # These are Git tree-entry modes, not the permissions of a temporary disk file.
 GIT_REGULAR_FILE_MODE = "100644"
+GIT_EXECUTABLE_FILE_MODE = "100755"
 GIT_DIRECTORY_MODE = "040000"
 
 PR_DIRECTORY = "pull-requests"
@@ -41,3 +42,7 @@ PRIVATE_KEY_FILE = ".__git-centric__sk-Ed25519"
 
 OWNER_ROLE = "owner"
 DEFAULT_ROLES = (OWNER_ROLE, "admin", "ci", "merger")
+
+POLICY_DIRECTORY = "access"
+RULES_DIRECTORY = "rules"
+RULE_PATTERN = "rule-*.py"

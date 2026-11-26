@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from policy_setup import grant_writes
 from test_initialization import git, isolated_git_config, repo  # noqa: F401
 from typer.testing import CliRunner
 
@@ -22,6 +23,7 @@ def pair(repo: Path, tmp_path: Path) -> tuple[Path, Path]:  # noqa: F811
     for directory in (repo, other):
         git(directory, "commit", "--allow-empty", "-m", "Base")
         assert isinstance(initialize_gc(directory), Success)
+        grant_writes(directory)
     return repo, other
 
 

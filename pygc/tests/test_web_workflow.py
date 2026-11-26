@@ -4,6 +4,7 @@ import asyncio
 
 import httpx
 import pytest
+from policy_setup import grant_writes
 from test_initialization import git, isolated_git_config, repo  # noqa: F401
 
 from pygc.library.constants import GC_REF
@@ -29,6 +30,7 @@ def test_guarded_discussion_and_patch(repo):  # noqa: F811
 
     assert "+base" in rpc("code.browse", branch="main", detail=True)["result"]["patch"]
     assert "result" in rpc("repo.initialize")
+    grant_writes(repo)
     for tab in ("issues", "pulls"):
         params = {"base": "main", "compare": "topic/ui"} if tab == "pulls" else {}
         identifier = rpc(tab + ".create", title="Example", description="@-", **params)["result"][
@@ -116,6 +118,7 @@ def test_reply_keeps_creation_byline(repo, monkeypatch, tab):  # noqa: F811
         return dispatch(dict(jsonrpc="2.0", id=1, method=method, params=params), methods)["result"]
 
     rpc("repo.initialize")
+    grant_writes(repo)
     branches = {"base": "main", "compare": "topic/byline"} if tab == "pulls" else {}
     item = rpc(f"{tab}.create", title="Original", description="Opening", **branches)
     monkeypatch.setenv("GIT_AUTHOR_NAME", "Reviewer")
@@ -155,7 +158,8 @@ def test_access_snapshot_and_guarded_writes(repo, tmp_path):  # noqa: F811
                 )
                 return response.json()
 
-            tip = (await rpc("repo.initialize"))["result"]
+            assert "result" in await rpc("repo.initialize")
+            tip = grant_writes(repo)
             snapshot = (await rpc("access.get"))["result"]
             assert snapshot["metadata_tip"] == tip
             assert [r["name"] for r in snapshot["roles"]] == ["admin", "ci", "merger", "owner"]
@@ -225,7 +229,8 @@ def test_node_registry_rpc(repo, monkeypatch):  # noqa: F811
     def rpc(method, **params):
         return dispatch(dict(jsonrpc="2.0", id=1, method=method, params=params), methods)
 
-    initial = rpc("repo.initialize")["result"]
+    assert "result" in rpc("repo.initialize")
+    initial = grant_writes(repo)
     assert rpc("nodes.list")["result"] == {"metadata_tip": initial, "nodes": []}
     node = {"name": "office", "url": "local.git"}
     assert rpc("nodes.add", **node, expectedTip=initial)["result"] == node
@@ -242,7 +247,7 @@ def test_node_registry_rpc(repo, monkeypatch):  # noqa: F811
     current = git(repo, "rev-parse", GC_REF)
     assert rpc("nodes.remove", name="office")["error"]["code"] == -32602
     monkeypatch.setattr(
-        policy, "check_action", lambda _: Failure(FailureReason.ACCESS_DENIED, "keep")
+        policy, "check_action", lambda *_: Failure(FailureReason.ACCESS_DENIED, "keep")
     )
     assert rpc("nodes.remove", name="office", expectedTip=current)["error"]["data"] == {
         "reason": "access_denied"
@@ -265,7 +270,7 @@ def test_permission_preview_and_write_recheck(repo, monkeypatch):  # noqa: F811
     denial = Failure(FailureReason.ACCESS_DENIED, "denied")
     observed = []
 
-    def check(action):
+    def check(action, *_context):
         observed.append(action)
         return denial if getattr(action, "node_id", None) == "keep" else True
 
@@ -275,6 +280,6 @@ def test_permission_preview_and_write_recheck(repo, monkeypatch):  # noqa: F811
     assert rpc("permissions.preview", actions=actions)["result"] == [False, True, True]
     assert [a.model_dump() for a in observed] == actions
     assert rpc("permissions.preview", actions=[{"name": "nodes.remove"}])["error"]["code"] == -32602
-    monkeypatch.setattr(policy, "check_action", lambda _: denial)
+    monkeypatch.setattr(policy, "check_action", lambda *_: denial)
     assert rpc("issues.create", title="Late denial")["error"]["data"] == {"reason": "access_denied"}
     assert git(repo, "rev-parse", GC_REF) == tip

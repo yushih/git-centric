@@ -21,7 +21,7 @@ def test_branch_policy(repo, monkeypatch):  # noqa: F811
     calls = []
     denied = lib.Failure(lib.FailureReason.ACCESS_DENIED, "protected base")
 
-    def check(action):
+    def check(action, *_context):
         calls.append(action)
         return denied if action.base == "new-base" else True
 
@@ -54,7 +54,7 @@ def test_registry_writes(repo, monkeypatch):  # noqa: F811
     blocked = ""
     denied = lib.Failure(lib.FailureReason.ACCESS_DENIED, "fixture")
 
-    def check(action):
+    def check(action, *_context):
         calls.append(action.model_dump())
         if action.name == blocked:
             if action.name != "access.users.change_roles" or action.user == "GC tests":
@@ -96,7 +96,7 @@ def test_node_policy_and_public_reads(repo, monkeypatch):  # noqa: F811
     calls = []
     denied = lib.Failure(lib.FailureReason.ACCESS_DENIED, "keep node")
 
-    def check(action):
+    def check(action, *_context):
         calls.append(action.model_dump())
         return denied if action.name == "nodes.remove" else True
 
@@ -116,7 +116,7 @@ def test_node_policy_and_public_reads(repo, monkeypatch):  # noqa: F811
         {"name": "nodes.change_url", "node_id": "office", "url": "b.git"},
         {"name": "nodes.remove", "node_id": "office", "url": "b.git"},
     ]
-    monkeypatch.setattr(policy, "check_action", lambda action: True)
+    monkeypatch.setattr(policy, "check_action", lambda action, *_context: True)
     assert lib.remove_node("office", repo) == lib.Success(lib.Node("office", "b.git"))
 
 
@@ -125,7 +125,7 @@ def test_issue_permissions(repo, monkeypatch):  # noqa: F811
     lib.initialize_gc(repo)
     seen = []
 
-    def check(action):
+    def check(action, *_context):
         seen.append(action.model_dump())
         return (
             True
@@ -143,3 +143,72 @@ def test_issue_permissions(repo, monkeypatch):  # noqa: F811
     assert lib.show_issue(issue.id, repo).value.issue == issue
     assert git(repo, "rev-parse", GC_REF) == tip
     assert seen == [{"name": "issues.create"}, {"name": "issues.comments.add"}]
+
+
+def test_committed_rules(repo):  # noqa: F811
+    # Replace the rule subtree in successive commits. Writes must authorize
+    # against this repository even while the process is in another checkout.
+    from git import Repo
+
+    from pygc.library.constants import GC_DIRECTORY, POLICY_DIRECTORY, RULES_DIRECTORY
+    from pygc.library.metadata import (
+        _blob,
+        _subtree,
+        _tree,
+        _write_tree,
+        prepare_commit,
+        publish_commit,
+    )
+
+    lib.initialize_gc(repo)
+    action = policy.Simple(name="issues.create")
+    # A fresh metadata branch has no rules directory at all.
+    assert policy.check_action(action, repo) == lib.Failure(
+        lib.FailureReason.ACCESS_DENIED, "No policy rule result"
+    )
+    cases = [
+        ([], "No policy rule result"),
+        (["None"], "No policy rule result"),
+        (["'grant'", "None", "'grant'"], True),
+        (["'deny'", "'deny'"], "Policy denied"),
+        (["'grant'", "'deny'"], "Conflicting"),
+        (["'grant'", "1 / 0"], "ZeroDivisionError"),
+        (["[]"], "invalid rule result"),
+        (
+            [
+                "'grant' if (action.name, user, roles) == "
+                "('issues.create', 'GC tests', ('owner',)) else 'deny'"
+            ],
+            True,
+        ),
+    ]
+    with Repo(repo) as database:
+        for expressions, expected in cases:
+            tip = git(repo, "rev-parse", GC_REF)
+            root = _tree(database, tip)
+            gc = _subtree(database, root, GC_DIRECTORY)
+            rules = {
+                f"rule-{i}.py": _blob(
+                    database, f"def eval(action, user, roles):\n    return {expr}\n"
+                )
+                for i, expr in enumerate(expressions)
+            }
+            rules["ignored.py"] = _blob(database, "raise RuntimeError()")
+            commit = prepare_commit(
+                database,
+                root,
+                gc,
+                {RULES_DIRECTORY: _write_tree(database, rules)},
+                POLICY_DIRECTORY,
+                tip,
+                "replace test rules",
+            )
+            publish_commit(database, commit, tip)
+            decision = policy.check_action(action, repo)
+            if expected is True:
+                assert decision is True
+            else:
+                assert isinstance(decision, lib.Failure)
+                assert expected in decision.detail
+                assert asyncio.run(lib.create_issue("blocked", directory=repo)) == decision
+                assert git(repo, "rev-parse", GC_REF) == commit

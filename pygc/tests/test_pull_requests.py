@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from policy_setup import grant_writes
 from test_initialization import git, isolated_git_config, repo  # noqa: F401
 from typer.testing import CliRunner
 
@@ -32,6 +33,7 @@ def ready(repo: Path) -> Path:  # noqa: F811
     git(repo, "checkout", "feature/login")
     git(repo, "commit", "--allow-empty", "-m", "Feature")
     assert isinstance(initialize_gc(repo), Success)
+    grant_writes(repo)
     return repo
 
 
@@ -606,7 +608,7 @@ def test_descriptive_pr_commit_messages(ready: Path) -> None:
     # must not claim changes, and multiline user text must remain one subject.
     import json
 
-    assert git(ready, "show", "-s", "--format=%B", GC_REF) == (
+    assert git(ready, "show", "-s", "--format=%B", GC_REF + "^") == (
         "initialize Git-centric metadata, create roles owner, admin, ci, merger, "
         "and register GC tests as owner"
     )

@@ -5,6 +5,7 @@ from threading import Event
 
 import httpx
 import pytest
+from policy_setup import grant_writes
 from test_initialization import isolated_git_config, repo  # noqa: F401
 
 from pygc import Failure, FailureReason, Finalization, Success, library
@@ -46,6 +47,7 @@ def test_action_trigger_and_poll_are_independent(repo, monkeypatch):  # noqa: F8
                 "/api/rpc", json={"jsonrpc": "2.0", "id": 1, "method": "repo.initialize"}
             )
             assert "result" in result.json()
+            grant_writes(repo)
             await wait_for_state(client, "idle")
             assert calls == []
             denied = await client.post("/api/finalization", headers={"origin": "https://other.org"})

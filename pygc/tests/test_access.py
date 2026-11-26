@@ -4,6 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 
+from policy_setup import grant_writes
 from test_initialization import git, isolated_git_config, repo  # noqa: F401
 from typer.testing import CliRunner
 
@@ -27,6 +28,7 @@ def test_role_lifecycle(repo):  # noqa: F811
     # Bootstrap only the current author and verify the committed public key independently.
     assert list_roles(repo).reason == FailureReason.NOT_INITIALIZED
     assert CliRunner().invoke(app, ["init", "--repo-dir", str(repo)]).exit_code == 0
+    grant_writes(repo)
     private = Path.home() / PRIVATE_KEY_FILE
     key = subprocess.check_output(["ssh-keygen", "-y", "-f", private], text=True).strip()
     assert private.stat().st_mode & 0o777 == 0o600
@@ -81,6 +83,7 @@ def test_key_reuse_and_failure(repo, tmp_path):  # noqa: F811
 def test_access_publication_race(repo, monkeypatch):  # noqa: F811
     # Publish a competing role between object creation and the expected-tip update.
     initialize_gc(repo)
+    grant_writes(repo)
     initial = list_roles(repo).value
     publish = access.publish_commit
 

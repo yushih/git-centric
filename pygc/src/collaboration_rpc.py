@@ -103,7 +103,7 @@ def collaboration_methods(directory: Path) -> dict[str, Callable[..., Any]]:
         supported = {"issues.create", "issues.comments.add", "access.roles.create", "nodes.remove"}
         if any(action.name not in supported for action in actions):
             raise ValueError("Unsupported preview action")
-        return [policy.check_action(action) is True for action in actions]
+        return [policy.check_action(action, directory) is True for action in actions]
 
     def nodes_list() -> Any:
         return result(get_node_snapshot(directory))

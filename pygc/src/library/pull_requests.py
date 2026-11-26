@@ -199,7 +199,11 @@ async def create_pull_request(
         _branch(store.repo, base)
         if identifier in store.records:
             _reject(FailureReason.ID_CONFLICT, "Generated pull request ID already exists")
-        policy.require(policy.PullCreate(name="pulls.create", base=base, compare=compare))
+        policy.require(
+            policy.PullCreate(name="pulls.create", base=base, compare=compare),
+            store.repo,
+            store.oid,
+        )
         pr = PullRequest(identifier, title, compare, base)
         pr = replace(pr, merged=_merged(store.repo, pr, _branches(store.repo)))
         store.prs[_name(pr)] = _write_tree(
@@ -281,7 +285,11 @@ def update_pull_request(
         # Retargeting is equivalent to opening this PR against the proposed base.
         # Use both final branches even when the same request also changes compare.
         if pr.base != before.base:
-            policy.require(policy.PullCreate(name="pulls.create", base=pr.base, compare=pr.compare))
+            policy.require(
+                policy.PullCreate(name="pulls.create", base=pr.base, compare=pr.compare),
+                store.repo,
+                store.oid,
+            )
         # Read history before publication: a read failure must not leave a
         # successfully committed update behind a Failure result. The snapshot
         # also gives no-op updates the same original metadata as real writes.

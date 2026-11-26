@@ -2,6 +2,7 @@
 
 import json
 
+from policy_setup import grant_writes
 from test_initialization import git, isolated_git_config, repo  # noqa: F401
 from typer.testing import CliRunner
 
@@ -16,7 +17,8 @@ def test_node_commands(repo, monkeypatch):  # noqa: F811
     runner = CliRunner()
     args = ["-do-not-finalize", "--repo-dir", str(repo)]
     assert list_nodes(repo).reason == FailureReason.NOT_INITIALIZED
-    parent = initialize_gc(repo).value
+    initialize_gc(repo)
+    parent = grant_writes(repo)
     assert json.loads(runner.invoke(app, ["node", "list", *args]).stdout) == []
     (repo / "work").write_text("staged")
     git(repo, "add", "work")
@@ -50,6 +52,7 @@ def test_node_commands(repo, monkeypatch):  # noqa: F811
 def test_node_race(repo, monkeypatch):  # noqa: F811
     # Interleave a winning add after the losing commit is built, before its CAS.
     initialize_gc(repo)
+    grant_writes(repo)
     publish = nodes.publish_commit
 
     def race(repository, commit, parent):

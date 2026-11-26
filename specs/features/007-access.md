@@ -44,3 +44,11 @@ the role name and membership. Membership changes authorize the complete sorted
 result per affected user before publishing a wildcard update. User registration
 accepts initial roles. Key replacement and deletion target a single registered user.
 The bootstrap initializer remains independent of the role registry.
+
+ACCESS-008. Evaluate every committed access/rules/rule-*.py directly under the
+metadata directory against the writer's parent snapshot. Each trusted Python
+module exports eval(action, user, roles), receiving the typed action, effective
+Git author name and a sorted tuple of that user's registered role names.
+Ignore None and duplicate votes. Grant only for a sole grant vote. Report a
+denial, missing votes, conflicts or rule errors through ACCESS_DENIED. Previews
+evaluate the selected repository. Denied writes preserve its metadata ref.

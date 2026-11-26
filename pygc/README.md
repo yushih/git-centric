@@ -443,9 +443,24 @@ and remove each registered node. A denied control is grayed out. Actions that
 depend on unfinished input report policy denials when submitted and retain drafts.
 
 The library checks the write actions listed in the root README through `pygc.library.policy.check_action`.
-It currently permits every action. A checker can return
-`Failure(FailureReason.ACCESS_DENIED, detail)` to deny a call. The root README
-documents the action names, parameters and compound-operation semantics.
+On the metadata branch, commit trusted Python files under
+`__git-centric__/access/rules/rule-*.py`. Each file defines
+`eval(action, user, roles)`. The action is a typed object with a `name` and
+action-specific fields. The user is the effective Git author name. Roles are
+a sorted tuple of registered memberships, empty for an unknown user.
+For example, a rule can grant issue creation to owners and abstain otherwise.
+
+```python
+def eval(action, user, roles):
+    if action.name == "issues.create" and "owner" in roles:
+        return "grant"
+    return None
+```
+
+Rules run as Python code with the permissions of the process performing the
+check, including during web permission previews. Only a grant with no deny or
+error permits a protected write. A fresh repository has no rules and denies
+protected writes until a rule grants access. Public reads remain available.
 
 ## Checks and packaging
 

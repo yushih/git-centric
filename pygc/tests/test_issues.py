@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from policy_setup import grant_writes
 from test_initialization import git, isolated_git_config, repo  # noqa: F401
 from test_pull_requests import ready  # noqa: F401
 from typer.testing import CliRunner
@@ -325,6 +326,7 @@ def test_issue_uninitialized_and_missing_identity(repo: Path, monkeypatch) -> No
 
     assert list_issues(directory=repo).reason == FailureReason.NOT_INITIALIZED
     assert isinstance(initialize_gc(repo), Success)
+    grant_writes(repo)
     before = git(repo, "rev-parse", GC_REF)
     monkeypatch.setenv("GIT_AUTHOR_NAME", "")
     result = asyncio.run(create_issue("Needs identity", directory=repo))

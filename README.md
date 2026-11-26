@@ -374,13 +374,9 @@ change node URL|node ID, node URL|
 remove node|node ID, node URL|
 change the policy scripts||
 
-Changing a PR’s base runs the create-pull-request check with the proposed base
-and the compare branch that the update would leave in effect. Role names are
-immutable. The node ID is its registered name. URL changes pass the proposed
-URL, while removals pass the current URL from the registry. Bulk role changes
-check each affected user’s complete proposed role set before publication.
-The [Pydantic action definitions](pygc/src/library/policy.py) include merge and
-policy-script changes for future writers.
+### Rules
+
+The access control result is obtained by evaluating all Python scripts in `__git-centric__/access/rules/rule-*.py`. Each script exports a `eval` function that takes an action, the requesting user and its roles. `eval` should return `'grant'`, `'deny'`, None or an error. After all results are collected, deduplicated and removed of `None`, if the result set is {`'grant'`}, the access is granted; if the result set is {`'deny'`}, the access is denied; if the result set is {} or {`'grant'`, `'deny'`} or contains an error, or the `eval` function throwes an exception, the access is denied with an error message pointing out lack of result, conflicting results or presence of an error. 
 
 TODO
 ```gc merge <pr>```

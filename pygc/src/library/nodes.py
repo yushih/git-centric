@@ -82,7 +82,7 @@ class _Registry:
         _validate(node, FailureReason.INVALID_ARGUMENT)
         if node.name in self.entries:
             _reject(FailureReason.ID_CONFLICT, f"Node already exists: {node.name}")
-        policy.require(policy.RegisterNode(name="nodes.add", url=node.url))
+        policy.require(policy.RegisterNode(name="nodes.add", url=node.url), self.repo, self.parent)
         self.entries[node.name] = _write_tree(
             self.repo, {NODE_URL_FILE: _blob(self.repo, node.url)}
         )
@@ -94,13 +94,21 @@ class _Registry:
         if node is None:
             _reject(FailureReason.NOT_FOUND, f"Unknown node: {name}")
         if url is None:
-            policy.require(policy.NodeTarget(name="nodes.remove", node_id=name, url=node.url))
+            policy.require(
+                policy.NodeTarget(name="nodes.remove", node_id=name, url=node.url),
+                self.repo,
+                self.parent,
+            )
             del self.entries[name]
             self.save(f"remove node {name} at {node.url}")
             return node
         updated = Node(name, url)
         _validate(updated, FailureReason.INVALID_ARGUMENT)
-        policy.require(policy.NodeTarget(name="nodes.change_url", node_id=name, url=url))
+        policy.require(
+            policy.NodeTarget(name="nodes.change_url", node_id=name, url=url),
+            self.repo,
+            self.parent,
+        )
         if node.url != url:
             entry = _subtree(self.repo, self.entries, name)
             entry[NODE_URL_FILE] = _blob(self.repo, url)
