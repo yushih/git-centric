@@ -300,3 +300,5 @@ textarea:disabled {
   border-color: #c8cdd2;
   cursor: not-allowed;
 }
+
+.rule-source { font-family: ui-monospace, monospace; tab-size: 4; }

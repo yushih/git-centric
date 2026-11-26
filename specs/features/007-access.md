@@ -52,3 +52,9 @@ Git author name and a sorted tuple of that user's registered role names.
 Ignore None and duplicate votes. Grant only for a sole grant vote. Report a
 denial, missing votes, conflicts or rule errors through ACCESS_DENIED. Previews
 evaluate the selected repository. Denied writes preserve its metadata ref.
+
+ACCESS-009. Access → Rules lists committed rule names and UTF-8 Python source.
+Local RPC mutations create, edit or delete a single rule at an expected metadata
+tip, after authorization by access.rules.change_scripts at that tip. Preserve helper
+files and unrelated metadata. Reject invalid paths and invalid Python edits,
+skip unchanged commits, and report concurrent updates as stale snapshots.

@@ -51,8 +51,13 @@ from .pull_requests import (
 )
 from .repository import RepositoryContext, get_repository
 from .result import Failure, FailureReason, Result, Success
+from .rules import Rule, RuleSnapshot, change_rule, list_rules
 
 __all__ = [
+    "Rule",
+    "RuleSnapshot",
+    "change_rule",
+    "list_rules",
     "change_role_metadata",
     "delete_user",
     "change_user_public_key",

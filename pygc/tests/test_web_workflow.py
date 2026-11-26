@@ -283,3 +283,39 @@ def test_permission_preview_and_write_recheck(repo, monkeypatch):  # noqa: F811
     monkeypatch.setattr(policy, "check_action", lambda *_: denial)
     assert rpc("issues.create", title="Late denial")["error"]["data"] == {"reason": "access_denied"}
     assert git(repo, "rev-parse", GC_REF) == tip
+
+
+def test_rule_script_management(repo, monkeypatch):  # noqa: F811
+    # The fresh owner's policy controls CRUD, including stale and denied saves.
+    methods = repository_methods(repo)
+
+    def rpc(method, **params):
+        return dispatch(dict(jsonrpc="2.0", id=1, method=method, params=params), methods)
+
+    tip = rpc("repo.initialize")["result"]
+    listing = rpc("access.rules.list")["result"]
+    assert listing["metadata_tip"] == tip
+    assert "rule-noop.py" in [rule["name"] for rule in listing["rules"]]
+    helper = git(repo, "rev-parse", f"{tip}:__git-centric__/access/rules/actions.py")
+
+    def change(operation, tip, **fields):
+        params = {"name": "rule-test.py", "expectedTip": tip, "operation": operation}
+        return rpc("access.rules.change", **(params | fields))
+
+    source = "def eval(action, user, roles):\n    return None\n"
+    for invalid in ({"source": "def broken"}, {"name": "actions.py"}, {"name": "rule-../bad.py"}):
+        result = change("create", tip, **({"source": source} | invalid))
+        assert result["error"]["data"]["reason"] == "invalid_argument"
+    created = change("create", tip, source=source)["result"]
+    assert change("edit", created, source=source)["result"] == created
+    assert change("delete", tip)["error"]["data"]["reason"] == "stale_snapshot"
+    edited = change("edit", created, source=source + "# reviewed\n")["result"]
+    assert git(repo, "show", f"{edited}:__git-centric__/access/rules/rule-test.py").endswith(
+        "# reviewed"
+    )
+    with monkeypatch.context() as patch:
+        patch.setenv("GIT_AUTHOR_NAME", "Other")
+        assert change("delete", edited)["error"]["data"]["reason"] == "access_denied"
+    deleted = change("delete", edited)["result"]
+    assert git(repo, "rev-parse", f"{deleted}:__git-centric__/access/rules/actions.py") == helper
+    assert rpc("access.rules.list")["result"]["rules"] == listing["rules"]

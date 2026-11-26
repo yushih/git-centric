@@ -11,6 +11,7 @@ from pydantic import ConfigDict, Field, validate_call
 
 from . import library as lib
 from .library import policy
+from .library.actions import ChangeAccessRuleScripts
 from .library.constants import GC_BRANCH, PR_TITLE_SEPARATOR
 from .library.nodes import get_node_snapshot
 
@@ -82,6 +83,18 @@ def collaboration_methods(directory: Path) -> dict[str, Callable[..., Any]]:
     def access_get() -> Any:
         return result(lib.get_access(directory))
 
+    def rules_list() -> Any:
+        return result(lib.list_rules(directory))
+
+    def rule_change(
+        operation: Literal["create", "edit", "delete"],
+        name: str,
+        expectedTip: Tip,
+        source: str | None = None,
+    ) -> Any:
+        decision = lib.change_rule(operation, name, source, directory, expected_tip=expectedTip)
+        return decision.value if isinstance(decision, lib.Success) else decision
+
     def user_add(name: str, publicKey: str, expectedTip: Tip) -> Any:
         return result(lib.add_user(name, publicKey, directory, expected_tip=expectedTip))
 
@@ -97,10 +110,18 @@ def collaboration_methods(directory: Path) -> dict[str, Callable[..., Any]]:
     def role_unassign(user: str, role: str, expectedTip: Tip) -> Any:
         return result(lib.unassign_role(user, role, directory, expected_tip=expectedTip))
 
-    def preview(actions: list[policy.Simple | policy.NodeTarget]) -> list[bool]:
+    def preview(
+        actions: list[policy.Simple | policy.NodeTarget | ChangeAccessRuleScripts],
+    ) -> list[bool]:
         # Preview only actions the UI can fully describe before editing. The
         # mutation independently constructs its action from the actual write.
-        supported = {"issues.create", "issues.comments.add", "access.roles.create", "nodes.remove"}
+        supported = {
+            "issues.create",
+            "issues.comments.add",
+            "access.roles.create",
+            "nodes.remove",
+            "access.rules.change_scripts",
+        }
         if any(action.name not in supported for action in actions):
             raise ValueError("Unsupported preview action")
         return [policy.check_action(action, directory) is True for action in actions]
@@ -123,6 +144,8 @@ def collaboration_methods(directory: Path) -> dict[str, Callable[..., Any]]:
         "nodes.add": checked(node_add),
         "nodes.change_url": checked(node_change),
         "nodes.remove": checked(node_remove),
+        "access.rules.list": checked(rules_list),
+        "access.rules.change": checked(rule_change),
         "access.get": checked(access_get),
         "access.users.add": checked(user_add),
         "access.roles.create": checked(role_create),

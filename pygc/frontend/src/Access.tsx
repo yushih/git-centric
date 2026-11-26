@@ -5,6 +5,8 @@ import { useRegistry, type Save } from "./useRegistry";
 
 import { createRole, noActions, PreviewStatus, usePermissions } from "./Permissions";
 
+import { Rules } from "./Rules";
+
 const readAccess = () => call("access.get", {});
 
 function RoleRow({role, snapshot, save}: {role: AccessRole; snapshot: AccessSnapshot; save: Save}) {
@@ -42,7 +44,7 @@ function RoleRow({role, snapshot, save}: {role: AccessRole; snapshot: AccessSnap
   </article>;
 }
 
-export function Access({usersView, onName, onSaved}: {
+function AccessRecords({usersView, onName, onSaved}: {
   usersView: boolean; onName: (name: string) => void; onSaved: () => void;
 }) {
   const {snapshot, setup, loading, saving, review, error, save, reload} =
@@ -69,12 +71,7 @@ export function Access({usersView, onName, onSaved}: {
         () => { setRoleName(""); setMetadata(""); });
     }
   }
-  return <section aria-label="Repository access">
-    <h2>Access</h2>
-    <nav className="pr-tabs" aria-label="Access views">
-      <a href="#access" aria-current={!usersView ? "page" : undefined}>Roles</a>
-      <a href="#access?view=users" aria-current={usersView ? "page" : undefined}>Users</a>
-    </nav>
+  return <>
     <PreviewStatus preview={preview} />
     {preview.decisions?.[0] === false && <p>Repository policy prevents creating roles.</p>}
     {error && <p role="alert">{error} <button disabled={loading || saving} onClick={reload}>Reload</button></p>}
@@ -109,5 +106,20 @@ export function Access({usersView, onName, onSaved}: {
         </>}
       </>}
     </fieldset>
+  </>;
+}
+
+export function Access({view, onName, onSaved}: {
+  view: string | null; onName: (name: string) => void; onSaved: () => void;
+}) {
+  return <section aria-label="Repository access">
+    <h2>Access</h2>
+    <nav className="pr-tabs" aria-label="Access views">
+      <a href="#access" aria-current={view !== "users" && view !== "rules" ? "page" : undefined}>Roles</a>
+      <a href="#access?view=users" aria-current={view === "users" ? "page" : undefined}>Users</a>
+      <a href="#access?view=rules" aria-current={view === "rules" ? "page" : undefined}>Rules</a>
+    </nav>
+    {view === "rules" ? <Rules onName={onName} onSaved={onSaved} /> :
+      <AccessRecords usersView={view === "users"} onName={onName} onSaved={onSaved} />}
   </section>;
 }

@@ -75,6 +75,7 @@ def create_app(static_dir: Path | None = None, *, directory: Path | None = None)
             "permissions.preview",
             "nodes.list",
             "access.get",
+            "access.rules.list",
             "repo.get",
             "code.browse",
             "greet",

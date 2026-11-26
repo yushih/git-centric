@@ -58,8 +58,10 @@ class NodeTarget(Fields):
     node_id: str
     url: str  # Proposed endpoint on update, stored endpoint on removal.
 
+
 class ChangeAccessRuleScripts(Fields):
     name: Literal["access.rules.change_scripts"]
+
 
 Action = Annotated[
     Simple

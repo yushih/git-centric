@@ -486,3 +486,10 @@ The browser can inspect the repository selected by `gc web --repo-dir PATH`
 with the parameterless JSON-RPC method `repo.get`. It returns the repository
 name, bare flag, HEAD branch and commit, initialization status and metadata tip.
 Reload workers inherit the same selection.
+
+In the web interface, open **Access → Rules** to inspect the committed Python
+source. Select **New rule** to create a script, or select an existing filename
+to edit or delete it. The current committed policy must grant
+`access.rules.change_scripts`. A concurrent metadata update requires a reload before
+saving. Repositories whose existing rules fail evaluation require a policy
+repair on the metadata branch before the editor can authorize changes.

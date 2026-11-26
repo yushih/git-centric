@@ -271,7 +271,7 @@ function App() {
         {route.tab === "nodes" ? (
           <Nodes onName={setName} onSaved={finalization.trigger} />
         ) : route.tab === "access" ? (
-          <Access usersView={new URLSearchParams(location.hash.split("?")[1]).get("view") === "users"} onName={setName} onSaved={finalization.trigger} />
+          <Access view={new URLSearchParams(location.hash.split("?")[1]).get("view")} onName={setName} onSaved={finalization.trigger} />
         ) : route.tab === "issues" || route.tab === "pulls" ? (
           <Collaboration
             key={location.hash}

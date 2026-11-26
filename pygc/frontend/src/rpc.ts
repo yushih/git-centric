@@ -118,6 +118,8 @@ type Endpoint<K extends string, P, R> = Record<K, { params: P; result: R }>;
 export type AccessUser = { name: string; public_key: string };
 export type AccessRole = { name: string; metadata: string; users: string[] };
 export type AccessSnapshot = { metadata_tip: string; users: AccessUser[]; roles: AccessRole[] };
+export type Rule = { name: string; source: string };
+export type RuleSnapshot = { metadata_tip: string; rules: Rule[] };
 type Conditional = { expectedTip: string };
 const accessUser = (v: unknown) => record(v) && typeof v.name === "string" && typeof v.public_key === "string";
 const accessRole = (v: unknown) => record(v) && typeof v.name === "string" && typeof v.metadata === "string" && strings(v.users);
@@ -126,13 +128,15 @@ export type RegistryNode = { name: string; url: string };
 export type NodeSnapshot = { metadata_tip: string; nodes: RegistryNode[] };
 const registryNode = (v: unknown) => record(v) && typeof v.name === "string" && typeof v.url === "string";
 export type PreviewAction =
-  | { name: "issues.create" | "issues.comments.add" | "access.roles.create" }
+  | { name: "issues.create" | "issues.comments.add" | "access.roles.create" | "access.rules.change_scripts" }
   | { name: "nodes.remove"; node_id: string; url: string };
 
 type Methods = Endpoint<"permissions.preview", { actions: readonly PreviewAction[] }, boolean[]> &
   Endpoint<"nodes.list", Record<string, never>, NodeSnapshot> &
   Endpoint<"nodes.add" | "nodes.change_url", Conditional & RegistryNode, RegistryNode> &
   Endpoint<"nodes.remove", Conditional & { name: string }, RegistryNode> &
+  Endpoint<"access.rules.list", Record<string, never>, RuleSnapshot> &
+  Endpoint<"access.rules.change", Conditional & {operation: "create" | "edit" | "delete"; name: string; source?: string}, string> &
   Endpoint<"access.get", Record<string, never>, AccessSnapshot> &
   Endpoint<"access.users.add", Conditional & { name: string; publicKey: string }, AccessUser> &
   Endpoint<"access.roles.create", Conditional & { name: string; metadata?: string }, AccessRole> &
@@ -271,6 +275,10 @@ export async function call<K extends keyof Methods>(
       return record(v) && typeof v.metadata_tip === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(v.metadata_tip)
         && Array.isArray(v.nodes) && v.nodes.every(registryNode);
     if (method.startsWith("nodes.")) return registryNode(v);
+    if (method === "access.rules.change") return typeof v === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(v);
+    if (method === "access.rules.list") return record(v) && typeof v.metadata_tip === "string"
+      && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(v.metadata_tip)
+      && Array.isArray(v.rules) && v.rules.every(r => record(r) && typeof r.name === "string" && typeof r.source === "string");
     if (method === "access.get")
       return record(v) && typeof v.metadata_tip === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(v.metadata_tip)
         && Array.isArray(v.users) && v.users.every(accessUser)
