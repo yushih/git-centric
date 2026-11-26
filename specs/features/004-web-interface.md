@@ -2,6 +2,8 @@
 
 State: implemented. See the [release verification record](../changes/2026-11-20-forge-ui.md) and [initial repository context record](../changes/2026-11-20-web-context.md).
 
+Web actions schedule [background finalization](../changes/2026-11-25-web-finalization.md).
+
 ## Product and information architecture
 
 Build a local, single-repository forge. Borrow GitHub's repository tabs, branch selector, file breadcrumbs, issue lists and PR conversation/files views. Use the actual local repository name and stable entity IDs. Git author identity describes authorship. The first release assumes one local operator and covers browsing code and managing collaboration metadata. Source editing, merging, remotes, accounts and permissions require separate product decisions.

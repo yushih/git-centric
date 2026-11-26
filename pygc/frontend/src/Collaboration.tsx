@@ -38,10 +38,12 @@ export function Collaboration({
   tab,
   query,
   onName,
+  onSaved,
 }: {
   tab: Tab;
   query: string;
   onName: (v: string) => void;
+  onSaved: () => void;
 }) {
   const q = new URLSearchParams(query);
   const id = q.get("id"),
@@ -140,6 +142,7 @@ export function Collaboration({
     setError("");
     try {
       await action();
+      onSaved();
       edit("");
       write("");
       reload((v) => v + 1);

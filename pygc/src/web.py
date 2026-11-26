@@ -2,6 +2,9 @@
 
 import json
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
@@ -10,14 +13,56 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 from .rpc import error, handle, repository_methods
+from .web_finalization import WebFinalization
+
+
+def _local_write(request: Request) -> bool:
+    # Verify the peer as well as Host to protect non-loopback launches and DNS rebinding.
+    local = {"localhost", "127.0.0.1", "::1"}
+    origin = request.headers.get("origin")
+    if (
+        request.client is None
+        or request.client.host not in local
+        or request.url.hostname not in local
+        or (
+            origin
+            and origin
+            not in {
+                f"{request.url.scheme}://{request.url.netloc}",
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+            }
+        )
+    ):
+        return False
+    return True
 
 
 def create_app(static_dir: Path | None = None, *, directory: Path | None = None) -> FastAPI:
-    app = FastAPI(title="Git-centric", version="0.1.0")
+    selected = (directory or Path(os.environ.get("PYGC_WEB_REPO", "."))).resolve()
+    methods = repository_methods(selected)
+    finalization = WebFinalization(selected)
 
-    methods = repository_methods(
-        (directory or Path(os.environ.get("PYGC_WEB_REPO", "."))).resolve()
-    )
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            await finalization.finish()
+
+    app = FastAPI(title="Git-centric", version="0.1.0", lifespan=lifespan)
+
+    @app.post("/api/finalization")
+    async def trigger_finalization(request: Request) -> Response:
+        if not _local_write(request):
+            return JSONResponse({"detail": "Local access required"}, status_code=403)
+        return JSONResponse(
+            asdict(finalization.request()), status_code=202, headers={"Cache-Control": "no-store"}
+        )
+
+    @app.get("/api/finalization")
+    async def finalization_status() -> Response:
+        return JSONResponse(asdict(finalization.status), headers={"Cache-Control": "no-store"})
 
     @app.post("/api/rpc")
     async def rpc(request: Request) -> Response:
@@ -43,23 +88,7 @@ def create_app(static_dir: Path | None = None, *, directory: Path | None = None)
             and item["method"] not in read_methods
             for item in requests
         ):
-            # Verify the peer as well as Host to protect non-loopback launches and DNS rebinding.
-            local = {"localhost", "127.0.0.1", "::1"}
-            origin = request.headers.get("origin")
-            if (
-                request.client is None
-                or request.client.host not in local
-                or request.url.hostname not in local
-                or (
-                    origin
-                    and origin
-                    not in {
-                        f"{request.url.scheme}://{request.url.netloc}",
-                        "http://localhost:5173",
-                        "http://127.0.0.1:5173",
-                    }
-                )
-            ):
+            if not _local_write(request):
                 return JSONResponse({"detail": "Local access required"}, status_code=403)
         result = await run_in_threadpool(handle, payload, methods)
         return Response(status_code=204) if result is None else JSONResponse(result)

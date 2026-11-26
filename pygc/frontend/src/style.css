@@ -279,3 +279,15 @@ button:disabled {
   border-bottom-color: #0969da;
   border-radius: 6px 6px 0 0;
 }
+
+.finalization {
+  margin: 0 0 0.65rem;
+  padding: 0.45rem 0.75rem;
+  border-left: 3px solid #8193a8;
+  background: #fff;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.finalization summary {
+  cursor: pointer;
+}

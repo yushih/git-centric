@@ -160,6 +160,14 @@ including an empty registry, the command exits 0 with `finalized: false`
 and records a local Git note. Inspect it with `git notes show __git-centric__`.
 A later run starts from current metadata and can retry incomplete propagation.
 
+In the web UI, a successful setup, issue, pull request or comment action sends
+a separate `POST /api/finalization`. It returns HTTP 202 immediately while Git
+runs in the background. The repository header polls `GET /api/finalization`
+every second and shows the latest web round, including warnings and its commit
+when available. Additional actions during a running round queue one follow-up
+round. If the trigger request fails, use **Retry finalization** in the header.
+Status is shared across tabs of the running server and resets on server restart.
+
 ### Pull requests and conversations
 
 Run `gc init` first. All supplied branch names must identify existing local

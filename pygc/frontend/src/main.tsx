@@ -2,6 +2,7 @@ import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { call, type Source } from "./rpc";
 import "./style.css";
+import { FinalizationPanel, useFinalization } from "./Finalization";
 import { Collaboration } from "./Collaboration";
 
 type Route = {
@@ -202,6 +203,7 @@ function Code({ s, r }: { s: Source; r: Route }) {
   );
 }
 function App() {
+  const finalization = useFinalization();
   const [route, go] = useState(readRoute);
   const [source, setSource] = useState<Source | null>(null);
   const [name, setName] = useState("");
@@ -244,6 +246,7 @@ function App() {
       <header>
         <small>Git-centric</small>
         <h1>{name || "Repository"}</h1>
+        <FinalizationPanel {...finalization} />
         <nav aria-label="Repository">
           {[
             ["code", "Code"],
@@ -267,6 +270,7 @@ function App() {
             tab={route.tab}
             query={location.hash.split("?")[1] || ""}
             onName={setName}
+            onSaved={finalization.trigger}
           />
         ) : busy ? (
           <p role="status">Loading…</p>
