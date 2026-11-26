@@ -38,3 +38,6 @@ ROLES_DIRECTORY = "roles"
 USERS_DIRECTORY = "users"
 PUBLIC_KEY_FILE = "pk-Ed25519"
 PRIVATE_KEY_FILE = ".__git-centric__sk-Ed25519"
+
+OWNER_ROLE = "owner"
+DEFAULT_ROLES = (OWNER_ROLE, "admin", "ci", "merger")

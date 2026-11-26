@@ -104,7 +104,7 @@ root-level `__git-centric__` **directory in its committed tree**. A file or
 symlink with that name, or an uncommitted directory, does not qualify.
 
 `initialize_gc` requires `Success(False)` and rechecks that precondition. It
-creates an orphan commit containing an empty `__git-centric__/.gitkeep` and the initial user’s public key.
+creates an orphan commit containing an empty `__git-centric__/.gitkeep`, the initial user’s public key, the default roles and the creator’s owner membership.
 GitPython invokes `hash-object`, `mktree`, `commit-tree`, and an atomic
 `update-ref` create transaction. HEAD, the index, and worktree files stay intact.
 Failed publication can leave unreachable Git objects for garbage collection.
@@ -119,7 +119,8 @@ the reason and detail to stderr and exit with status 1.
 
 Initialization uses OpenSSH `ssh-keygen` to create or reuse the owner-only private
 key `~/.__git-centric__sk-Ed25519`. It registers the Git author name and matching
-public key in the repository. Existing repositories can register users explicitly.
+public key in the repository. It creates `owner`, `admin`, `ci` and `merger` with empty
+metadata and assigns the creator to `owner`. Existing repositories can register users explicitly.
 
 ```sh
 gc access user add Ada "$(cat ada.pub)"

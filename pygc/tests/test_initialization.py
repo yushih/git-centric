@@ -46,7 +46,13 @@ def assert_initial_commit(repo: Path, oid: str) -> None:
     assert git(repo, "rev-list", "--parents", "-n", "1", GC_REF) == oid
     assert git(repo, "ls-tree", "--name-only", GC_REF) == GC_DIRECTORY
     assert git(repo, "ls-tree", "-r", "--name-only", GC_REF) == (
-        f"{GC_DIRECTORY}/{GC_KEEP_FILE}\n{GC_DIRECTORY}/access-control/users/GC tests/pk-Ed25519"
+        f"{GC_DIRECTORY}/{GC_KEEP_FILE}\n"
+        + "".join(
+            f"{GC_DIRECTORY}/access-control/roles/{role}\n"
+            for role in ("admin", "ci", "merger", "owner")
+        )
+        + f"{GC_DIRECTORY}/access-control/users/GC tests/pk-Ed25519\n"
+        + f"{GC_DIRECTORY}/access-control/users/GC tests/roles/owner"
     )
     assert git(repo, "show", f"{GC_REF}:{GC_DIRECTORY}/{GC_KEEP_FILE}") == ""
     assert is_gc_initialized(repo) == Success(True)

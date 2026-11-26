@@ -73,7 +73,7 @@ Also, there is simple gossip protocol to support decentralization.
 (L2)To initialize GC, run:
 ```gc init```
 in the working directory. The Git repository must already exist (`git init`
-creates one). Initialization preserves your current branch and working files.
+creates one). 
 
 
 ## Pull requests
@@ -319,6 +319,39 @@ else:
 
 Every successful CLI command finalizes by default. Pass `-do-not-finalize` or
 `--do-not-finalize` to record a local "not finalized" note instead.
+
+
+## Access control
+
+The access control works by evaluating Python programs againt the action initiator, the action name and detailed action parameters. The default implementation comes with a role-based access control (RBAC) mechanics. Conceptually, whether an action can be performed is determined the boolean outcome of the function: 
+
+```EvalPython(Python program, user, user's role, role's metadata, action name, action parameters)```
+
+The parameters `user`, `action name`, `action parameters` are supplied by the system, while all other parameters `Python program`, `user's role`, `role's metadata` are customizable.
+
+This design affords superb flexibility while keeping a clean architecture. Users can do things such as:
+
+1. mirror any organization structure
+
+2. have uncoventional access control logic, such as a "cinderella" role that switches identify depending on whether the action is occuring before or after a designated time.
+
+### The role database format
+
+(L1)
+Each roles is a file under the `__git-centric__/access-control/roles` directory. The file name is role name. The file content is the role metadata.
+
+Each user is a directory under the `__git-centric__/access-control/users` directory. The name of the directory is the user name. Under each user directory, there is a `pk-Ed25519` file storing the Ed25519 public key of the user.
+
+(L2)
+When `gc init` runs, it creates a `.__git-centric__sk-Ed25519` file in the user home directory storing the corresponding private key.It also creates default roles `owner`, `admin`, `ci` and `merger`. The creating user is an owner.
+
+
+```gc access role list```: list roles, for each role show the users
+```gc access role create <role name> [<role metadata>]```: create a role with optional metadata
+```gc access role delete|remove <role name>```: delete a role, err if there are users in the role
+```gc access role assign|unassign <user name> <role name>```: add/remove user to a role, <user name> can be `*` for all users
+
+
 
 TODO
 ```gc merge <pr>```

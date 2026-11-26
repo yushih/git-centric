@@ -123,7 +123,7 @@ def init(
     repo_dir: RepoDir = None,
     do_not_finalize: Defer = False,
 ) -> None:
-    """Initialize metadata and register the Git author with a local Ed25519 key."""
+    """Create metadata and default roles, registering the Git author as owner."""
     # Translate the library's result into CLI output and an exit status. The
     # library itself remains independent of Typer and never exits the process.
     match library.initialize_gc(_directory(repo_dir, directory)):

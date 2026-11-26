@@ -26,7 +26,7 @@ from pygc.library.constants import GC_REF, PRIVATE_KEY_FILE
 def test_role_lifecycle(repo):  # noqa: F811
     # Bootstrap only the current author and verify the committed public key independently.
     assert list_roles(repo).reason == FailureReason.NOT_INITIALIZED
-    assert isinstance(initialize_gc(repo), Success)
+    assert CliRunner().invoke(app, ["init", "--repo-dir", str(repo)]).exit_code == 0
     private = Path.home() / PRIVATE_KEY_FILE
     key = subprocess.check_output(["ssh-keygen", "-y", "-f", private], text=True).strip()
     assert private.stat().st_mode & 0o777 == 0o600
@@ -55,7 +55,11 @@ def test_role_lifecycle(repo):  # noqa: F811
     assert git(repo, "rev-parse", GC_REF) == tip
     assert run("role", "unassign", "*", "reviewer").exit_code == 0
     assert run("role", "remove", "reviewer").exit_code == 0
-    assert json.loads(run("role", "list").stdout) == []
+    # Adding another user and editing a custom role preserve the initial memberships.
+    assert json.loads(run("role", "list").stdout) == [
+        {"name": name, "metadata": "", "users": ["GC tests"] if name == "owner" else []}
+        for name in ("admin", "ci", "merger", "owner")
+    ]
 
 
 def test_key_reuse_and_failure(repo, tmp_path):  # noqa: F811
@@ -77,6 +81,7 @@ def test_key_reuse_and_failure(repo, tmp_path):  # noqa: F811
 def test_access_publication_race(repo, monkeypatch):  # noqa: F811
     # Publish a competing role between object creation and the expected-tip update.
     initialize_gc(repo)
+    initial = list_roles(repo).value
     publish = access.publish_commit
 
     def race(repository, commit, parent):
@@ -86,4 +91,4 @@ def test_access_publication_race(repo, monkeypatch):  # noqa: F811
 
     monkeypatch.setattr(access, "publish_commit", race)
     assert create_role("loser", directory=repo).reason == FailureReason.GIT_ERROR
-    assert list_roles(repo) == Success([Role("winner", "", [])])
+    assert list_roles(repo) == Success([*initial, Role("winner", "", [])])

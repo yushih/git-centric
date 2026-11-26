@@ -13,11 +13,14 @@ from git.exc import GitError, InvalidGitRepositoryError, NoSuchPathError
 
 from .constants import (
     ACCESS_DIRECTORY,
+    DEFAULT_ROLES,
     GC_DIRECTORY,
     GC_INITIAL_COMMIT_MESSAGE,
     GC_KEEP_FILE,
     GC_REF,
     GIT_DIRECTORY_MODE,
+    OWNER_ROLE,
+    ROLES_DIRECTORY,
     USERS_DIRECTORY,
 )
 from .result import Failure, FailureReason, Result, Success
@@ -135,7 +138,7 @@ def initialize_gc(directory: str | Path = ".") -> Result[str]:
     be silently reset. Git's normal author/committer configuration is used, and
     missing identity or object-write failures are returned as GIT_ERROR.
 
-    The commit has no parents and contains the empty metadata marker and initial user public key.
+    The orphan commit contains the metadata marker, initial owner identity and default roles.
     HEAD, the index, and worktree files are untouched.
     """
     try:
@@ -164,12 +167,15 @@ def initialize_gc(directory: str | Path = ".") -> Result[str]:
                 key = local_public_key()
             except ValueError as exc:
                 return Failure(FailureReason.IO_ERROR, str(exc))
-            user = _write_tree(repo, user_tree(repo, key))
+            # Role metadata and membership markers both default to empty blobs.
+            empty = _blob(repo, "")
+            roles = _write_tree(repo, {name: empty for name in DEFAULT_ROLES})
+            creator = user_tree(repo, key)
+            creator[ROLES_DIRECTORY] = _write_tree(repo, {OWNER_ROLE: empty})
+            user = _write_tree(repo, creator)
             users = _write_tree(repo, {author: user})
-            access = _write_tree(repo, {USERS_DIRECTORY: users})
-            directory_tree = _write_tree(
-                repo, {GC_KEEP_FILE: _blob(repo, ""), ACCESS_DIRECTORY: access}
-            )
+            access = _write_tree(repo, {USERS_DIRECTORY: users, ROLES_DIRECTORY: roles})
+            directory_tree = _write_tree(repo, {GC_KEEP_FILE: empty, ACCESS_DIRECTORY: access})
             root_tree = _write_tree(repo, {GC_DIRECTORY: directory_tree})[2]
 
             # Omitting every -p argument is what makes this an orphan commit.
@@ -180,7 +186,8 @@ def initialize_gc(directory: str | Path = ".") -> Result[str]:
                 "commit-tree",
                 root_tree,
                 "-m",
-                f"{GC_INITIAL_COMMIT_MESSAGE} and register user {author}",
+                f"{GC_INITIAL_COMMIT_MESSAGE}, create roles {', '.join(DEFAULT_ROLES)}, "
+                f"and register {author} as {OWNER_ROLE}",
             )
 
             # 'create' asserts absence inside Git's ref transaction, closing the
