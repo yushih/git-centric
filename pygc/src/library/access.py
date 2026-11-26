@@ -1,12 +1,13 @@
 """Snapshot-based user and role registry on the shared metadata branch."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from git import Repo
 from git.exc import GitCommandError
 
+from . import policy
 from .constants import (
     ACCESS_DIRECTORY,
     GC_DIRECTORY,
@@ -101,6 +102,12 @@ class _Registry:
                     _reject(FailureReason.INVALID_METADATA, f"Invalid membership: {user}, {role}")
                 self.members[role].append(user)
 
+    def list_users(self) -> list[User]:
+        return [User(n, k) for n, k in self.keys.items()]
+
+    def list_roles(self) -> list[Role]:
+        return [self.role(n) for n in self.metadata]
+
     def text(self, entries: Entries, name: str) -> str:
         entry = entries.get(name)
         if not entry or entry[:2] != (GIT_REGULAR_FILE_MODE, "blob"):
@@ -124,7 +131,7 @@ class _Registry:
                 _reject(FailureReason.STALE_SNAPSHOT, "Registry changed; reload before saving")
             raise
 
-    def add(self, name: str, key: str) -> User:
+    def add(self, name: str, key: str, roles: Sequence[str]) -> User:
         validate_name(name)
         if name in self.users:
             _reject(FailureReason.ID_CONFLICT, f"User already exists: {name}")
@@ -132,8 +139,19 @@ class _Registry:
             key = public_key(key)
         except ValueError as exc:
             _reject(FailureReason.INVALID_ARGUMENT, str(exc))
-        self.users[name] = _write_tree(self.repo, user_tree(self.repo, key))
-        self.save(USERS_DIRECTORY, self.users, f"register user {name}")
+        if isinstance(roles, str):
+            _reject(FailureReason.INVALID_ARGUMENT, "Expected a sequence of role names")
+        initial = tuple(sorted(set(roles)))
+        for role in initial:
+            self.role(role)
+        policy.require(policy.RegisterUser(name="access.users.add", user=name, roles=initial))
+        entry = user_tree(self.repo, key)
+        if initial:
+            marker = _blob(self.repo, "")
+            entry[ROLES_DIRECTORY] = _write_tree(self.repo, dict.fromkeys(initial, marker))
+        self.users[name] = _write_tree(self.repo, entry)
+        suffix = f" with roles {', '.join(initial)}" if initial else ""
+        self.save(USERS_DIRECTORY, self.users, f"register user {name}{suffix}")
         return User(name, key)
 
     def role(self, name: str) -> Role:
@@ -146,6 +164,7 @@ class _Registry:
         validate_name(name)
         if name in self.roles:
             _reject(FailureReason.ID_CONFLICT, f"Role already exists: {name}")
+        policy.require(policy.Simple(name="access.roles.create"))
         self.roles[name] = _blob(self.repo, metadata)
         self.save(ROLES_DIRECTORY, self.roles, f"create role {name}")
         return Role(name, metadata, [])
@@ -158,6 +177,40 @@ class _Registry:
         self.save(ROLES_DIRECTORY, self.roles, f"delete role {name}")
         return role
 
+    def metadata_update(self, name: str, metadata: str) -> Role:
+        role = self.role(name)
+        policy.require(
+            policy.RoleMetadata(
+                name="access.roles.change_metadata", role=name, new_metadata=metadata
+            )
+        )
+        if metadata != role.metadata:
+            self.roles[name] = _blob(self.repo, metadata)
+            self.save(ROLES_DIRECTORY, self.roles, f"change metadata for role {name}")
+        return Role(name, metadata, role.users)
+
+    def edit_user(self, name: str, key: str | None) -> User:
+        validate_name(name)
+        if name not in self.keys:
+            _reject(FailureReason.NOT_FOUND, f"Unknown user: {name}")
+        previous = self.keys[name]
+        if key is None:
+            policy.require(policy.UserTarget(name="access.users.delete", user=name))
+            del self.users[name]
+            self.save(USERS_DIRECTORY, self.users, f"delete user {name}")
+            return User(name, previous)
+        try:
+            key = public_key(key)
+        except ValueError as exc:
+            _reject(FailureReason.INVALID_ARGUMENT, str(exc))
+        policy.require(policy.UserTarget(name="access.users.change_public_key", user=name))
+        if key != previous:
+            entry = _subtree(self.repo, self.users, name)
+            entry[PUBLIC_KEY_FILE] = _blob(self.repo, key + "\n")
+            self.users[name] = _write_tree(self.repo, entry)
+            self.save(USERS_DIRECTORY, self.users, f"change public key for user {name}")
+        return User(name, key)
+
     def membership(self, user: str, name: str, assign: bool) -> Role:
         role = self.role(name)
         if user != "*":
@@ -165,10 +218,23 @@ class _Registry:
             if user not in self.users:
                 _reject(FailureReason.NOT_FOUND, f"Unknown user: {user}")
         members = set(role.users)
-        changed = []
-        for target in sorted(self.users) if user == "*" else [user]:
-            if (target in members) == assign:
-                continue
+        targets = sorted(self.users) if user == "*" else [user]
+        changed = tuple(target for target in targets if (target in members) != assign)
+        # Authorize all resulting memberships before staging any part of a bulk edit.
+        for target in changed:
+            resulting = {role for role, users in self.members.items() if target in users}
+            if assign:
+                resulting.add(name)
+            else:
+                resulting.discard(name)
+            policy.require(
+                policy.UserRoles(
+                    name="access.users.change_roles",
+                    user=target,
+                    new_roles=tuple(sorted(resulting)),
+                )
+            )
+        for target in changed:
             entry = _subtree(self.repo, self.users, target)
             markers = _subtree(self.repo, entry, ROLES_DIRECTORY)
             if assign:
@@ -179,7 +245,6 @@ class _Registry:
                 members.remove(target)
             entry[ROLES_DIRECTORY] = _write_tree(self.repo, markers)
             self.users[target] = _write_tree(self.repo, entry)
-            changed.append(target)
         # Wildcards operate on the validated snapshot and publish in one ref update.
         if changed:
             verb = "assign" if assign else "unassign"
@@ -202,17 +267,22 @@ def _run[T](
 
 
 def add_user(
-    name: str, public_key: str, directory: str | Path = ".", *, expected_tip: str | None = None
+    name: str,
+    public_key: str,
+    directory: str | Path = ".",
+    *,
+    roles: Sequence[str] = (),
+    expected_tip: str | None = None,
 ) -> Result[User]:
-    return _run(directory, lambda r: r.add(name, public_key), expected_tip)
+    return _run(directory, lambda r: r.add(name, public_key, roles), expected_tip)
 
 
 def list_users(directory: str | Path = ".") -> Result[list[User]]:
-    return _run(directory, lambda r: [User(n, k) for n, k in r.keys.items()])
+    return _run(directory, _Registry.list_users)
 
 
 def list_roles(directory: str | Path = ".") -> Result[list[Role]]:
-    return _run(directory, lambda r: [r.role(n) for n in r.metadata])
+    return _run(directory, _Registry.list_roles)
 
 
 def create_role(
@@ -243,7 +313,23 @@ def get_access(directory: str | Path = ".") -> Result[AccessSnapshot]:
     """Read both views at one immutable tip, including the precondition for writes."""
     return _run(
         directory,
-        lambda r: AccessSnapshot(
-            r.parent, [User(n, k) for n, k in r.keys.items()], [r.role(n) for n in r.metadata]
-        ),
+        lambda r: AccessSnapshot(r.parent, r.list_users(), r.list_roles()),
     )
+
+
+def change_role_metadata(
+    name: str, metadata: str, directory: str | Path = ".", *, expected_tip: str | None = None
+) -> Result[Role]:
+    return _run(directory, lambda r: r.metadata_update(name, metadata), expected_tip)
+
+
+def delete_user(
+    name: str, directory: str | Path = ".", *, expected_tip: str | None = None
+) -> Result[User]:
+    return _run(directory, lambda r: r.edit_user(name, None), expected_tip)
+
+
+def change_user_public_key(
+    name: str, public_key: str, directory: str | Path = ".", *, expected_tip: str | None = None
+) -> Result[User]:
+    return _run(directory, lambda r: r.edit_user(name, public_key), expected_tip)

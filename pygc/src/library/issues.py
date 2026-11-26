@@ -9,6 +9,7 @@ from urllib.parse import unquote
 
 from git import Repo
 
+from . import policy
 from .constants import (
     COMMENT_MAIN,
     COMMENT_PREFIX,
@@ -178,6 +179,7 @@ async def create_issue(title: str, comment: str = "", directory: str | Path = ".
         _title(title)
         if identifier in store.records:
             _reject(FailureReason.ID_CONFLICT, "Generated issue ID already exists")
+        policy.require(policy.Simple(name="issues.create"))
         issue = Issue(identifier, title)
         store.entries[_name(issue)] = _write_tree(
             store.repo, {COMMENT_PREFIX + COMMENT_MAIN: _blob(store.repo, comment)}
@@ -314,6 +316,7 @@ async def add_issue_comment(
         issue_id, *replies = target.split(ISSUE_TITLE_SEPARATOR)
         name, _ = store.get(issue_id)
         entries = _subtree(store.repo, store.entries, name)
+        policy.require(policy.Simple(name="issues.comments.add"))
         result = append_comment(store.repo, entries, identifier, replies, text)
         store.entries[name] = _write_tree(store.repo, entries)
         detail = f" replying to {', '.join(replies)}" if replies else ""

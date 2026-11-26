@@ -6,6 +6,7 @@ from pathlib import Path
 
 from git import Repo
 
+from . import policy
 from .constants import GC_DIRECTORY, GIT_REGULAR_FILE_MODE, NODE_URL_FILE, NODES_DIRECTORY
 from .initialization import _branch_oid, _failure, _has_gc_directory
 from .metadata import (
@@ -71,9 +72,33 @@ class _Registry:
         _validate(node, FailureReason.INVALID_ARGUMENT)
         if node.name in self.entries:
             _reject(FailureReason.ID_CONFLICT, f"Node already exists: {node.name}")
+        policy.require(policy.RegisterNode(name="nodes.add", url=node.url))
         self.entries[node.name] = _write_tree(
             self.repo, {NODE_URL_FILE: _blob(self.repo, node.url)}
         )
+        self.save(f"add node {node.name}")
+        return node
+
+    def edit(self, name: str, url: str | None) -> Node:
+        node = next((item for item in self.nodes if item.name == name), None)
+        if node is None:
+            _reject(FailureReason.NOT_FOUND, f"Unknown node: {name}")
+        if url is None:
+            policy.require(policy.NodeTarget(name="nodes.remove", node_id=name, url=node.url))
+            del self.entries[name]
+            self.save(f"remove node {name} at {node.url}")
+            return node
+        updated = Node(name, url)
+        _validate(updated, FailureReason.INVALID_ARGUMENT)
+        policy.require(policy.NodeTarget(name="nodes.change_url", node_id=name, url=url))
+        if node.url != url:
+            entry = _subtree(self.repo, self.entries, name)
+            entry[NODE_URL_FILE] = _blob(self.repo, url)
+            self.entries[name] = _write_tree(self.repo, entry)
+            self.save(f"change URL for node {name} to {url}")
+        return updated
+
+    def save(self, message: str) -> None:
         commit = prepare_commit(
             self.repo,
             self.root,
@@ -81,11 +106,10 @@ class _Registry:
             self.entries,
             NODES_DIRECTORY,
             self.parent,
-            f"add node {node.name}",
+            message,
         )
         # Publish against the snapshot we validated, preserving concurrent additions.
         publish_commit(self.repo, commit, self.parent)
-        return node
 
 
 def _run[T](directory: str | Path, operation: Callable[[_Registry], T]) -> Result[T]:
@@ -107,4 +131,13 @@ def add_node(name: str, url: str, directory: str | Path = ".") -> Result[Node]:
 
 def list_nodes(directory: str | Path = ".") -> Result[list[Node]]:
     """Read all registered endpoints from one committed snapshot, ordered by name."""
+
     return _run(directory, lambda registry: registry.nodes)
+
+
+def change_node_url(name: str, url: str, directory: str | Path = ".") -> Result[Node]:
+    return _run(directory, lambda registry: registry.edit(name, url))
+
+
+def remove_node(name: str, directory: str | Path = ".") -> Result[Node]:
+    return _run(directory, lambda registry: registry.edit(name, None))

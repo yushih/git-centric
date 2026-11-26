@@ -14,6 +14,7 @@ from urllib.parse import unquote
 from git import Repo
 from git.exc import GitCommandError
 
+from . import policy
 from .constants import (
     COMMENT_MAIN,
     COMMENT_PREFIX,
@@ -198,6 +199,7 @@ async def create_pull_request(
         _branch(store.repo, base)
         if identifier in store.records:
             _reject(FailureReason.ID_CONFLICT, "Generated pull request ID already exists")
+        policy.require(policy.PullCreate(name="pulls.create", base=base, compare=compare))
         pr = PullRequest(identifier, title, compare, base)
         pr = replace(pr, merged=_merged(store.repo, pr, _branches(store.repo)))
         store.prs[_name(pr)] = _write_tree(
@@ -276,6 +278,10 @@ def update_pull_request(
             draft=True if "draft" in values else False if "ready" in values else pr.draft,
             closed=True if "close" in values else False if "reopen" in values else pr.closed,
         )
+        # Retargeting is equivalent to opening this PR against the proposed base.
+        # Use both final branches even when the same request also changes compare.
+        if pr.base != before.base:
+            policy.require(policy.PullCreate(name="pulls.create", base=pr.base, compare=pr.compare))
         # Read history before publication: a read failure must not leave a
         # successfully committed update behind a Failure result. The snapshot
         # also gives no-op updates the same original metadata as real writes.

@@ -352,6 +352,34 @@ When `gc init` runs, it creates a `.__git-centric__sk-Ed25519` file in the user 
 ```gc access role assign|unassign <user name> <role name>```: add/remove user to a role, <user name> can be `*` for all users
 
 
+### Actions
+
+(L1)No read operation is access-controlled.
+
+Action | Parameters|
+|-|-|
+create pull request|base branch, compare branch|
+merge pull request| pull request ID, base branch|
+create issue||
+comment on issue||
+add role||
+change role metadata|role name, new metadata|
+add user|user name and roles|
+delete user|user name|
+change user public key|user name|
+change user roles|user name, new roles|
+add node|new node URL|
+change node URL|node ID, node URL|
+remove node|node ID, node URL|
+change the policy scripts||
+
+Changing a PR’s base runs the create-pull-request check with the proposed base
+and the compare branch that the update would leave in effect. Role names are
+immutable. The node ID is its registered name. URL changes pass the proposed
+URL, while removals pass the current URL from the registry. Bulk role changes
+check each affected user’s complete proposed role set before publication.
+The [Pydantic action definitions](pygc/src/library/policy.py) include merge and
+policy-script changes for future writers.
 
 TODO
 ```gc merge <pr>```

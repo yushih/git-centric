@@ -35,3 +35,7 @@ passed. The sandboxed suite stalled at the HTTP tests. The approved rerun of
 The node cases in `tests/test_nodes.py` cover CLI behavior and Git state
 (test_node_commands), corrupt data (test_corrupt_registry) and concurrent
 publication (test_node_race).
+
+NODE-005: update-url NAME URL checks the new URL with the existing node ID;
+remove NAME checks the stored URL with that ID. Return the updated or removed
+node. Missing records fail with not_found. Identical URL updates create no commit.

@@ -11,6 +11,7 @@ from tempfile import TemporaryFile
 from git import Git, Repo
 from git.exc import GitError, InvalidGitRepositoryError, NoSuchPathError
 
+from . import policy
 from .constants import (
     ACCESS_DIRECTORY,
     DEFAULT_ROLES,
@@ -99,6 +100,8 @@ def _has_gc_directory(repo: Repo, oid: str) -> bool:
 
 def _failure(exc: Exception) -> Failure:
     """Translate operational exceptions into the public failure vocabulary."""
+    if isinstance(exc, policy.Denied):
+        return exc.failure
     if isinstance(exc, (InvalidGitRepositoryError, NoSuchPathError, NotADirectoryError)):
         return Failure(FailureReason.NOT_A_REPOSITORY, str(exc))
     if isinstance(exc, GitError):

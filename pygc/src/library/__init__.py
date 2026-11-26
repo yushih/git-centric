@@ -9,8 +9,11 @@ from .access import (
     User,
     add_user,
     assign_role,
+    change_role_metadata,
+    change_user_public_key,
     create_role,
     delete_role,
+    delete_user,
     get_access,
     list_roles,
     list_users,
@@ -30,7 +33,7 @@ from .issues import (
     update_issue,
     update_issue_comment,
 )
-from .nodes import Node, add_node, list_nodes
+from .nodes import Node, add_node, change_node_url, list_nodes, remove_node
 from .pull_requests import (
     Comment,
     FileChange,
@@ -50,6 +53,11 @@ from .repository import RepositoryContext, get_repository
 from .result import Failure, FailureReason, Result, Success
 
 __all__ = [
+    "change_role_metadata",
+    "delete_user",
+    "change_user_public_key",
+    "change_node_url",
+    "remove_node",
     "AccessSnapshot",
     "get_access",
     "Role",

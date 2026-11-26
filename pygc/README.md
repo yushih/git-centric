@@ -146,6 +146,11 @@ again. A successful action schedules background finalization. Python callers can
 read the same snapshot with `get_access(directory)` and pass its `metadata_tip`
 as `expected_tip` to a registry write.
 
+Use `gc access role update-metadata NAME TEXT` to replace a role’s metadata.
+Register a user with initial roles using repeatable `--role NAME` options on
+`gc access user add`. Use `gc access user update-key NAME PUBLIC_KEY` to replace
+the key and `gc access user delete NAME` to remove the user and their memberships.
+
 ### Participating nodes
 
 After `gc init`, register a Git endpoint and list the repository's nodes:
@@ -153,6 +158,8 @@ After `gc init`, register a Git endpoint and list the repository's nodes:
 ```sh
 gc node add office git@example.org:team/project.git
 gc node list
+gc node update-url office git@example.org:team/renamed.git
+gc node remove office
 ```
 
 Add prints a JSON object with `name` and `url`. Names are unique, and a repeated
@@ -425,6 +432,11 @@ remain `from pygc import greet`. Editable installs use the same mapping.
 
 Only explicitly registered functions are callable through RPC. Synchronous
 library calls run in a worker thread, keeping the server event loop available.
+
+The library checks the write actions listed in the root README through `pygc.library.policy.check_action`.
+It currently permits every action. A checker can return
+`Failure(FailureReason.ACCESS_DENIED, detail)` to deny a call. The root README
+documents the action names, parameters and compound-operation semantics.
 
 ## Checks and packaging
 

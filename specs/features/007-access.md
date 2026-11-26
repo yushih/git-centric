@@ -34,3 +34,13 @@ The first unrestricted run exposed a CLI positional metadata parsing error.
 After correcting it, `uv run pytest -q` passed all 150 tests with one Starlette
 TestClient deprecation warning. The access tests cover the CLI lifecycle,
 key derivation and reuse, invalid inputs, no-op writes, and competing publication.
+
+## Policy gate
+
+Only the write actions enumerated in the root README reach the checker. Reads and
+unlisted writes bypass it. A changed PR base requires the create permission for
+the resulting branch pair before any combined update. Role metadata edits preserve
+the role name and membership. Membership changes authorize the complete sorted
+result per affected user before publishing a wildcard update. User registration
+accepts initial roles. Key replacement and deletion target a single registered user.
+The bootstrap initializer remains independent of the role registry.

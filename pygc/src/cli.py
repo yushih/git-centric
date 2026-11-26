@@ -551,10 +551,16 @@ access_app.add_typer(user_app, name="user")
 
 @user_app.command("add", cls=_FinalizingCommand)
 def user_add(
-    name: str, public_key: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+    name: str,
+    public_key: str,
+    role: Annotated[
+        list[str] | None, typer.Option("--role", help="Initial role (repeatable).")
+    ] = None,
+    repo_dir: RepoDir = None,
+    do_not_finalize: Defer = False,
 ) -> None:
     """Register a named user with a quoted OpenSSH Ed25519 public key."""
-    _output(library.add_user(name, public_key, directory=_directory(repo_dir)))
+    _output(library.add_user(name, public_key, roles=role or (), directory=_directory(repo_dir)))
 
 
 @user_app.command("list", cls=_FinalizingCommand)
@@ -601,3 +607,39 @@ def role_unassign(
 ) -> None:
     """Remove a role from a user. Quote * to select all users."""
     _output(library.unassign_role(user, role, directory=_directory(repo_dir)))
+
+
+@node_app.command("update-url", cls=_FinalizingCommand)
+def change_node_url(
+    name: str, url: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+) -> None:
+    """Change a registered node endpoint."""
+    _output(library.change_node_url(name, url, directory=_directory(repo_dir)))
+
+
+@node_app.command("remove", cls=_FinalizingCommand)
+def remove_node(name: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False) -> None:
+    """Remove a registered node."""
+    _output(library.remove_node(name, directory=_directory(repo_dir)))
+
+
+@role_app.command("update-metadata", cls=_FinalizingCommand)
+def change_role_metadata(
+    name: str, metadata: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+) -> None:
+    """Replace metadata for an existing role."""
+    _output(library.change_role_metadata(name, metadata, directory=_directory(repo_dir)))
+
+
+@user_app.command("update-key", cls=_FinalizingCommand)
+def change_user_public_key(
+    name: str, public_key: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+) -> None:
+    """Replace a registered user’s Ed25519 public key."""
+    _output(library.change_user_public_key(name, public_key, directory=_directory(repo_dir)))
+
+
+@user_app.command("delete", cls=_FinalizingCommand)
+def delete_user(name: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False) -> None:
+    """Delete a registered user and their memberships."""
+    _output(library.delete_user(name, directory=_directory(repo_dir)))

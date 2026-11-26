@@ -15,8 +15,11 @@ from .library.access import (
     User,
     add_user,
     assign_role,
+    change_role_metadata,
+    change_user_public_key,
     create_role,
     delete_role,
+    delete_user,
     get_access,
     list_roles,
     list_users,
@@ -35,7 +38,7 @@ from .library.issues import (
     update_issue,
     update_issue_comment,
 )
-from .library.nodes import Node, add_node, list_nodes
+from .library.nodes import Node, add_node, change_node_url, list_nodes, remove_node
 from .library.pull_requests import (
     Comment,
     FileChange,
@@ -54,6 +57,11 @@ from .library.pull_requests import (
 from .library.repository import RepositoryContext, get_repository
 
 __all__ = [
+    "change_role_metadata",
+    "delete_user",
+    "change_user_public_key",
+    "change_node_url",
+    "remove_node",
     "AccessSnapshot",
     "get_access",
     "Role",
