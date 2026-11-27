@@ -70,6 +70,7 @@ def test_clean_merge_and_next_push(repo):  # noqa: F811
     # local-change was itself registered as an unreachable third voter.
     assert result.value.finalized and result.value.successful == ("a-peer", "z-peer")
     assert git(repo, "show", "-s", "--format=%P", GC_REF) == f"{local} {remote}"
+    assert git(first, "rev-parse", GC_REF) == result.value.tip
     assert git(last, "rev-parse", GC_REF) == result.value.tip
     assert git(repo, "symbolic-ref", "HEAD") == "refs/heads/main"
     assert (repo / ".git/index").read_bytes() == index
@@ -203,3 +204,39 @@ def test_cli_runs_one_round_and_surfaces_failure(repo, monkeypatch):  # noqa: F8
     assert result.exit_code == 1 and "conflict_change" in result.stderr
     assert json.loads(result.stdout)["title"] == "local work"
     assert "local work" in git(repo, "log", "-1", "--format=%s", GC_REF)
+
+
+def test_restart_selected_branch(repo, monkeypatch):  # noqa: F811
+    # A late fast-forward invalidates the first peer's vote. Its failed retry
+    # leaves a tie and annotates the selected branch without moving metadata.
+    from pygc.library import consensus
+
+    initialize_gc(repo)
+    grant_writes(repo)
+    first = peer(repo, "first")
+    last = peer(repo, "last")
+    metadata = git(repo, "rev-parse", GC_REF)
+    git(repo, "commit", "--allow-empty", "-m", "base")
+    branch = "release/v1"
+    git(repo, "branch", branch)
+    base = git(repo, "rev-parse", branch)
+    git(repo, "commit", "--allow-empty", "-m", "advance")
+    advanced = git(repo, "rev-parse", "HEAD")
+    git(repo, "push", str(last), f"HEAD:refs/heads/{branch}")
+    push = consensus._push
+
+    def reject_retry(repository, node, oid, ref):
+        if node.name == "first" and oid == advanced:
+            return 1, "policy rejection"
+        return push(repository, node, oid, ref)
+
+    monkeypatch.setattr(consensus, "_push", reject_retry)
+    result = finalize(repo, branch)
+    assert isinstance(result, Success) and not result.value.finalized
+    assert result.value.successful == ("last",)
+    assert git(first, "rev-parse", branch) == base
+    assert git(repo, "rev-parse", branch) == advanced
+    assert git(repo, "notes", "show", advanced) == "not finalized"
+    assert git(repo, "rev-parse", GC_REF) == metadata
+    assert finalize(repo, "absent").reason == FailureReason.BRANCH_NOT_FOUND
+    assert finalize(repo, "bad..branch").reason == FailureReason.INVALID_ARGUMENT

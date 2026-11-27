@@ -71,15 +71,15 @@ def _git_result(repo: Repo, *args: str) -> tuple[int, str]:
     return status, output
 
 
-def _branch_oid(repo: Repo) -> str | None:
-    """Find only the local metadata branch, not a tag or remote-tracking ref."""
+def _branch_oid(repo: Repo, branch_ref: str = GC_REF) -> str | None:
+    """Find only the exact local branch, not a tag or remote-tracking ref."""
     # for-each-ref succeeds with empty output for an absent branch. Other Git
     # failures remain exceptions here and become Failure at the public boundary.
     # Its filter can include descendants, so compare the complete ref name too.
-    refs = _git(repo, "for-each-ref", "--format=%(refname) %(objectname)", GC_REF)
+    refs = _git(repo, "for-each-ref", "--format=%(refname) %(objectname)", branch_ref)
     for line in refs.splitlines():
         ref, oid = line.split(" ", 1)
-        if ref == GC_REF:
+        if ref == branch_ref:
             return oid
     return None
 

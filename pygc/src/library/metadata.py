@@ -88,13 +88,20 @@ def prepare_commit(
     return git(repo, "commit-tree", tree, "-p", parent, "-m", message)
 
 
-def publish_commit(repo: Repo, commit: str, parent: str, git: Callable[..., str] = _git) -> None:
-    """Compare-and-swap the shared metadata ref; never overwrite a racing writer."""
+def publish_commit(
+    repo: Repo,
+    commit: str,
+    parent: str,
+    git: Callable[..., str] = _git,
+    *,
+    branch_ref: str = GC_REF,
+) -> None:
+    """Compare-and-swap the selected branch ref; never overwrite a racing writer."""
     git(
         repo,
         "update-ref",
         "--stdin",
-        stdin=f"option no-deref\nupdate {GC_REF} {commit} {parent}\n".encode(),
+        stdin=f"option no-deref\nupdate {branch_ref} {commit} {parent}\n".encode(),
     )
 
 

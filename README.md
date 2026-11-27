@@ -282,29 +282,33 @@ GC substitutes consistency for mergability. Although not strictly a CRDT, the da
 
 (L1)The finalization procedure is:
 
-conflictNodeSet = {}
-successNodeSet = {}
-successCount = 0
-For each node in the node list:
-  push
-  if success:
-    add node to successNodeSet
-    sucessCount += 1
-  else if rejected:
-    pull from __git_centric__ branch from node
-    if successfully merge node/__git_centric__ branch into local __git_centric__ branch:
+Input: branch (defaults to __git-centric__)
+do
+  newCommit = false
+  conflictNodeSet = {}
+  successNodeSet = {}
+  for each node in the node list:
+    push the current branch tip to the same branch on node
+    if success:
       add node to successNodeSet
-      successCount += 1
+    else if rejected due to divergent history:
+      fetch branch from node
+      if reconciliation advances the local branch:
+        newCommit = true
+        break (restart with the new tip)
+      else if merge conflict:
+        add node to conflictNodeSet
+        print "conflict with node" warning
+      else:
+        warn about the rejected push
     else:
-      add node to conflictNodeSet
-      print "conflict with node" warning
-  else:
-    print node unreachable warning
+      print peer warning
+while newCommit
 
 half = floor(totalNodeCount / 2):
-if successCount > half:
+if count(successNodeSet) > half:
   for each node in conflictNodeSet:
-    fetch __git-centric__ branch from node
+    fetch branch from node
     add a note "conflict: <node list>" to the remote branch, where <node list> is successNodeSet
     push the note to node
     if the above is unsuccessful, warn and continue
@@ -312,7 +316,7 @@ if successCount > half:
 else if count(conflictNodeSet) > half:
   error: "conflict change"
 else:
-  add a "not finalized" git note to the head commit of __git-centric__ branch
+  add a "not finalized" git note to the head commit of branch
   warn: "no finality"
 
 (L2)
@@ -376,7 +380,7 @@ change the rule scripts||
 
 ### Rules
 
-The access control result is obtained by evaluating all Python scripts in `__git-centric__/access/rules/rule-*.py`. Each script exports a `eval` function that takes an action, the requesting user and its roles. `eval` should return `'grant'`, `'deny'`, None or an error. After all results are collected, deduplicated and removed of `None`, if the result set is {`'grant'`}, the access is granted; if the result set is {`'deny'`}, the access is denied; if the result set is {} or {`'grant'`, `'deny'`} or contains an error, or the `eval` function throwes an exception, the access is denied with an error message pointing out lack of result, conflicting results or presence of an error. 
+The access control result is obtained by evaluating all Python scripts in `__git-centric__/access-control/rules/rule-*.py`. Each script exports a `eval` function that takes an action, the requesting user and its roles. `eval` should return `'grant'`, `'deny'`, None or an error. After all results are collected, deduplicated and removed of `None`, if the result set is {`'grant'`}, the access is granted; if the result set is {`'deny'`}, the access is denied; if the result set is {} or {`'grant'`, `'deny'`} or contains an error, or the `eval` function throwes an exception, the access is denied with an error message pointing out lack of result, conflicting results or presence of an error.
 
 TODO
 ```gc merge <pr>```

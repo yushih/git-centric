@@ -192,8 +192,10 @@ Ordinary commands keep their usual stdout and send finalization warnings to stde
 A finalization failure exits 1 and any completed local write remains in history.
 Run `gc consensus finalize` to push the local metadata branch to registered
 nodes. Use `--repo-dir PATH` to select the repository. Git 2.38+ supports
-checkout-free reconciliation of divergent histories. A clean local merge counts
-as a successful vote and subsequent peers receive its tip.
+checkout-free reconciliation of divergent histories. When reconciliation advances the branch,
+finalization restarts at the first peer. Only accepted pushes of the final tip count.
+Python callers can select another local branch with `finalize(directory, branch="release")`.
+The peer registry always comes from metadata.
 
 The command prints JSON containing `finalized`, `tip`, `successful`, `conflicts`
 and `warnings`. Peer warnings also appear on stderr. A strict majority of

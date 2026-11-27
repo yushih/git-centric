@@ -6,21 +6,22 @@ Implement the README consensus procedure through a synchronous Python operation
 and `gc consensus finalize [--repo-dir PATH]`. CLI commands also follow the [automatic finalization contract](../changes/2026-11-25-command-finalization.md). PR merging,
 and RPC exposure are outside this command.
 
-- FIN-001. Snapshot the metadata tip and sorted registry once. Push only the
-  candidate metadata commit to each configured node. Count an accepted push
-  as success. After a non-fast-forward rejection, fetch the remote metadata
-  and reconcile locally. A clean merge counts as success immediately. Subsequent
-  nodes receive the resulting tip. A merge conflict counts as conflict. Other
-  transport failures warn and contribute no vote.
+- FIN-001. Snapshot the sorted registry from metadata once. The Python operation
+  accepts a local branch name, defaulting to the metadata branch used by the CLI
+  and web. Reject invalid or absent targets before contacting peers. Push the
+  selected candidate to each node. After a history rejection, fetch the same
+  branch and reconcile locally. Whenever reconciliation advances the candidate,
+  restart at the first node with fresh votes. Only accepted pushes in the last
+  pass count. A conflict counts against that candidate. Transport failures warn.
 - FIN-002. A strict majority of all configured nodes must succeed for finality.
-  Refresh each conflicting peer's metadata tip, append a standard Git note
+  Refresh each conflicting peer's selected branch tip, append a standard Git note
   naming the successful nodes and push its notes ref. Preserve other notes.
   Failure to notify one peer warns and processing continues.
 - FIN-003. A strict conflict majority fails with conflict_change. Otherwise,
   including ties and zero nodes, append “not finalized” to the local candidate
   and warn “no finality”. This warning exits 0. List node warnings on stderr.
 - FIN-004. Preserve checkout, index, unrelated refs and notes. A competing local
-  metadata write invalidates the candidate. Remote updates use normal
+  write to the selected branch invalidates the candidate. Remote updates use normal
   fast-forward protection. Notes should be idempotent for an identical message.
   Failures may leave earlier successful pushes or reconciliations in place.
 
@@ -41,3 +42,7 @@ deprecation warning. Integration tests use local Git transport and bare peers.
 
 - FIN-001 and FIN-004: test_clean_merge_and_next_push, test_concurrent_local_write.
 - FIN-002 and FIN-003: test_conflict_outcomes, test_no_finality_cli.
+
+The [branch and restart change record](../changes/2026-11-27-finalization-restart.md)
+covers the revised FIN-001, including a rejected retry on a non-metadata branch
+in `test_restart_selected_branch`.
