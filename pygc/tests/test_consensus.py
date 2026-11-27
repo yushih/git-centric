@@ -38,7 +38,7 @@ def test_no_finality_cli(repo):  # noqa: F811
     runner = CliRunner()
 
     def invoke():
-        result = runner.invoke(app, ["consensus", "finalize", "--repo-dir", str(repo)])
+        result = runner.invoke(app, ["sync", "push", "gc", "--repo-dir", str(repo)])
         assert result.exit_code == 0, result.output
         assert "no finality" in result.stderr
         assert json.loads(result.stdout)["finalized"] is False
@@ -164,7 +164,7 @@ def test_command_completion_uses_current_metadata_tip(repo, tmp_path):  # noqa: 
 
     # Either spelling and placement defers even the explicit finalize command.
     for flag in ("-do-not-finalize", "--do-not-finalize"):
-        result = runner.invoke(app, [flag, "consensus", "finalize", *args])
+        result = runner.invoke(app, [flag, "sync", "push", "gc", *args])
         assert result.exit_code == 0 and not json.loads(result.stdout)["finalized"]
     assert git(repo, "rev-parse", GIT_NOTES_REF) == notes
     assert git(remote, "rev-parse", GC_REF) == old
@@ -194,7 +194,7 @@ def test_cli_runs_one_round_and_surfaces_failure(repo, monkeypatch):  # noqa: F8
     monkeypatch.setattr(cli.library, "finalize", record)
     monkeypatch.setattr(cli.uvicorn, "run", lambda *a, **kw: calls.append("serve"))
     runner = CliRunner()
-    for command in (["node", "list"], ["consensus", "finalize"], ["help"], ["web"]):
+    for command in (["node", "list"], ["sync", "push", "gc"], ["help"], ["web"]):
         calls.clear()
         result = runner.invoke(app, [*command, "--repo-dir", str(repo)])
         assert result.exit_code == 0, result.output
@@ -240,3 +240,22 @@ def test_restart_selected_branch(repo, monkeypatch):  # noqa: F811
     assert git(repo, "rev-parse", GC_REF) == metadata
     assert finalize(repo, "absent").reason == FailureReason.BRANCH_NOT_FOUND
     assert finalize(repo, "bad..branch").reason == FailureReason.INVALID_ARGUMENT
+
+
+def test_sync_push_selects_working_or_explicit_branch(repo):  # noqa: F811
+    # Branch selection follows the chosen repository's HEAD. Explicit targets
+    # also work in detached HEAD, and each successful push propagates metadata.
+    initialize_gc(repo)
+    grant_writes(repo)
+    remote = peer(repo, "peer")
+    git(repo, "commit", "--allow-empty", "-m", "main")
+    runner = CliRunner()
+    args = ["--repo-dir", str(repo)]
+    assert runner.invoke(app, ["sync", "push", *args]).exit_code == 0
+    assert git(remote, "rev-parse", "main") == git(repo, "rev-parse", "main")
+    assert git(remote, "rev-parse", GC_REF) == git(repo, "rev-parse", GC_REF)
+    git(repo, "branch", "topic")
+    git(repo, "switch", "--detach")
+    assert runner.invoke(app, ["sync", "push", *args]).exit_code == 1
+    assert runner.invoke(app, ["sync", "push", "topic", *args]).exit_code == 0
+    assert git(remote, "rev-parse", "topic") == git(repo, "rev-parse", "topic")

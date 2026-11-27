@@ -6,7 +6,7 @@ State: verified
 
 This feature supersedes the pull-request non-goal in the architecture baseline.
 
-Implement the root README's PR library and CLI, without RPC, UI, merging,
+Implement the root README's PR library and CLI, without RPC, UI,
 remote refs, or gossip. All operations use Result values and
 require initialized metadata. Expose async create_pull_request and add_comment;
 list_pull_requests, update_pull_request, and list_comments are synchronous.
@@ -108,3 +108,13 @@ PR-009: Show reports merge conflicts, conflicting file paths, and compare-side
 file change records (including rename/copy sources and change types) using the
 [merge analysis contract](../changes/2026-11-19-pr-merge-analysis.md), without
 modifying the checkout, index, or refs.
+
+## Local merge
+
+`gc pr merge ID` checks the committed pulls.merge policy for the ID and base,
+then merges the compare tip into the local base. Fast-forward when possible,
+preserve both parents on divergence and leave refs intact on conflict or denial.
+An already merged PR needs no new commit. Verify the PR/policy snapshot and
+both input refs when publishing. Merged status continues to derive from ancestry.
+Finalize compare, then metadata once. Deferral skips both pushes and records
+the ordinary local metadata note. A failed push leaves the local merge in place.

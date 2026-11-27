@@ -19,6 +19,7 @@ from .constants import (
     COMMENT_MAIN,
     COMMENT_PREFIX,
     GC_DIRECTORY,
+    GC_REF,
     PR_CLOSED,
     PR_COMPARE_SEPARATOR,
     PR_DIRECTORY,
@@ -307,6 +308,63 @@ def update_pull_request(
         return pr
 
     return _run(directory, update, expected_tip)
+
+
+def merge_pull_request(identifier: str, directory: str | Path = ".") -> Result[PullRequest]:
+    """Authorize and merge the captured compare tip into its local base ref."""
+
+    def merge(store: _Store) -> PullRequest:
+        _, pr = store.get(identifier)
+        repo = store.repo
+        policy.require(
+            policy.PullMerge(name="pulls.merge", id=identifier, base=pr.base), repo, store.oid
+        )
+        branches = _branches(repo)
+        for name in (pr.base, pr.compare):
+            if name not in branches:
+                _reject(FailureReason.BRANCH_NOT_FOUND, f"Unknown local branch: {name}")
+        base, compare = branches[pr.base], branches[pr.compare]
+        if _git_result(repo, "merge-base", "--is-ancestor", compare, base)[0] == 0:
+            merged = base
+        elif _git_result(repo, "merge-base", "--is-ancestor", base, compare)[0] == 0:
+            merged = compare
+        else:
+            status, tree = _git_result(repo, "merge-tree", "--write-tree", base, compare)
+            if status:
+                _reject(FailureReason.BRANCH_CONFLICT, f"Merge conflict in PR {identifier}")
+            merged = _git(
+                repo,
+                "commit-tree",
+                tree,
+                "-p",
+                base,
+                "-p",
+                compare,
+                "-m",
+                f"merge pr {identifier}: {pr.compare} into {pr.base}",
+            )
+
+        # Verify the policy/PR and both branch tips atomically, even on a no-op.
+        # Git accepts only one instruction per ref if any of these names coincide.
+        base_ref = f"refs/heads/{pr.base}"
+        expected = {base_ref: base, f"refs/heads/{pr.compare}": compare}
+        if expected.get(GC_REF, store.oid) != store.oid:
+            _reject(FailureReason.STALE_SNAPSHOT, "Metadata changed during merge")
+        expected[GC_REF] = store.oid
+        commands = []
+        for ref, oid in expected.items():
+            commands.extend(
+                [
+                    "option no-deref",
+                    f"update {ref} {merged} {oid}"
+                    if ref == base_ref and merged != base
+                    else f"verify {ref} {oid}",
+                ]
+            )
+        _git(repo, "update-ref", "--stdin", stdin=("\n".join(commands) + "\n").encode())
+        return replace(pr, merged=True)
+
+    return _run(directory, merge)
 
 
 def list_pull_requests(

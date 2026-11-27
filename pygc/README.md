@@ -176,8 +176,8 @@ Registration stores the endpoint locally on the metadata branch under
 
 ### Finalize metadata
 
-Every successful CLI command, including reads, runs one finalization round in
-the selected repository. `gc web` finalizes before starting the server.
+Every successful CLI command, including reads, finalizes metadata in the selected
+repository by default. `gc web` finalizes before starting the server.
 Pass `-do-not-finalize` (also `--do-not-finalize`) before the command or on its
 leaf to skip peer contact and add the Git note `not finalized` to the current
 local metadata tip. Repeating the flag on subsequent invocations preserves
@@ -190,8 +190,12 @@ gc -do-not-finalize node list
 
 Ordinary commands keep their usual stdout and send finalization warnings to stderr.
 A finalization failure exits 1 and any completed local write remains in history.
-Run `gc consensus finalize` to push the local metadata branch to registered
-nodes. Use `--repo-dir PATH` to select the repository. Git 2.38+ supports
+Run `gc sync push` for the working branch or `gc sync push BRANCH` for a named
+branch. Use `gc sync push gc` for metadata. A successful branch push also runs
+the usual metadata finalization. Use `gc pr merge ID` to check merge permission,
+merge compare into base locally, then sync compare and metadata. The local merge
+updates the base ref without checking it out or rewriting worktree or index files. Deferral
+records a local metadata note and skips peer contact for both commands. Use `--repo-dir PATH` to select the repository. Git 2.38+ supports
 checkout-free reconciliation of divergent histories. When reconciliation advances the branch,
 finalization restarts at the first peer. Only accepted pushes of the final tip count.
 Python callers can select another local branch with `finalize(directory, branch="release")`.

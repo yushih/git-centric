@@ -320,11 +320,13 @@ else:
   warn: "no finality"
 
 (L2)
-```gc consensus finalize```: run the finalization procedure
-
-Every successful CLI command finalizes by default. Pass `-do-not-finalize` or
+Every successful CLI command finalizes the `__git-centric__` branch by default. Pass `-do-not-finalize` or
 `--do-not-finalize` to record a local "not finalized" note instead.
 
+```gc sync push```: run the finalization procedure for the working branch
+```gc sync push <branch>```: run the finalization procedure for <branch>
+```gc sync push gc```: equalivalent to ```gc sync push __git-centric__```
+```gc pr merge <ID>```: merge the pull request. First do permission check. Then merge the compare branch into base branch locally. Then sync-push the compare branch and the `__git-centric__` branch, unless `--do-not-finalize`.
 
 ## Access control
 

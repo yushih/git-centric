@@ -1011,3 +1011,96 @@ def test_show_conflict_status_without_unmerged_paths(ready: Path) -> None:
     from pygc.cli import _pr_text
 
     assert "Conflicting files: none reported by Git" in _pr_text(details)
+
+
+def test_merge_and_sync_branches(ready: Path, tmp_path: Path) -> None:
+    # Divergent histories require a two-parent merge. Only compare and metadata
+    # go to the peer; repeating a deferred merge creates no second merge commit.
+    from pygc import add_node
+
+    remote = tmp_path / "merge-peer.git"
+    git(tmp_path, "init", "--bare", str(remote))
+    assert isinstance(add_node("peer", str(remote), ready), Success)
+    item = create(ready)
+    compare = git(ready, "rev-parse", "feature/login")
+    git(ready, "switch", "main")
+    git(ready, "commit", "--allow-empty", "-m", "base-only work")
+    base = git(ready, "rev-parse", "main")
+    git(ready, "switch", "feature/login")
+    args = ["pr", "merge", item.id, "--repo-dir", str(ready)]
+    runner = CliRunner()
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, result.output
+    assert git(ready, "show", "-s", "--format=%P", "main") == f"{base} {compare}"
+    assert git(remote, "rev-parse", "feature/login") == compare
+    assert git(remote, "rev-parse", GC_REF) == git(ready, "rev-parse", GC_REF)
+    assert git(remote, "branch", "--list", "main") == ""
+    merged = git(ready, "rev-parse", "main")
+    assert runner.invoke(app, [*args, "--do-not-finalize"]).exit_code == 0
+    assert git(ready, "rev-parse", "main") == merged
+    assert git(ready, "notes", "show", GC_REF) == "not finalized"
+
+
+def test_merge_permission_conflict_and_race(ready: Path, monkeypatch) -> None:
+    # A denied action, conflicting files, and a competing base writer must
+    # each leave the base at the independently expected commit.
+    from pygc.library import change_rule, merge_pull_request
+
+    item = create(ready)
+    base = git(ready, "rev-parse", "main")
+    denial = (
+        "def eval(action, user, roles):\n"
+        "    if action.name == 'pulls.merge'"
+        f" and action.id == {item.id!r} and action.base == 'main':\n"
+        "        return 'deny'\n"
+        "    return 'grant'\n"
+    )
+    assert isinstance(
+        change_rule(
+            "edit", "rule-test.py", denial, ready, expected_tip=git(ready, "rev-parse", GC_REF)
+        ),
+        Success,
+    )
+    assert merge_pull_request(item.id, ready).reason == FailureReason.ACCESS_DENIED
+    assert git(ready, "rev-parse", "main") == base
+    grant_writes(ready)
+    for branch in ("main", "feature/login"):
+        git(ready, "switch", branch)
+        (ready / "value").write_text(branch)
+        git(ready, "add", "value")
+        git(ready, "commit", "-m", branch)
+    base = git(ready, "rev-parse", "main")
+    assert merge_pull_request(item.id, ready).reason == FailureReason.BRANCH_CONFLICT
+    assert git(ready, "rev-parse", "main") == base
+
+    # Restore a fast-forwardable base, then move it after the merge has been
+    # prepared. The atomic publication must preserve the concurrent writer.
+    git(ready, "branch", "-f", "main", "feature/login~1")
+    original = pr._git
+
+    def race(repository, *args, **kwargs):
+        if args[:2] == ("update-ref", "--stdin"):
+            git(ready, "update-ref", "refs/heads/main", base)
+        return original(repository, *args, **kwargs)
+
+    monkeypatch.setattr(pr, "_git", race)
+    assert isinstance(merge_pull_request(item.id, ready), Failure)
+    assert git(ready, "rev-parse", "main") == base
+
+
+def test_deferred_fast_forward(ready: Path, tmp_path: Path) -> None:
+    # The global defer flag still permits the local fast-forward and leaves
+    # both peer branches absent, even when a reachable peer is registered.
+    from pygc import add_node
+
+    peer = tmp_path / "deferred.git"
+    git(tmp_path, "init", "--bare", str(peer))
+    assert isinstance(add_node("peer", str(peer), ready), Success)
+    item = create(ready)
+    result = CliRunner().invoke(
+        app, ["--do-not-finalize", "pr", "merge", item.id, "--repo-dir", str(ready)]
+    )
+    assert result.exit_code == 0, result.output
+    assert git(ready, "rev-parse", "main") == git(ready, "rev-parse", item.compare)
+    assert git(ready, "notes", "show", GC_REF) == "not finalized"
+    assert git(peer, "for-each-ref") == ""

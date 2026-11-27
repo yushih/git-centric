@@ -11,6 +11,7 @@ from typer._click.core import Context as ClickContext
 from typer.core import TyperCommand, TyperGroup
 
 from . import library
+from .library.constants import GC_BRANCH
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -41,10 +42,20 @@ def common_options(ctx: typer.Context, do_not_finalize: Defer = False) -> None:
 
 
 def _complete(
-    directory: Path, defer: bool, *, optional_repo: bool = False, report: bool = False
+    directory: Path,
+    defer: bool,
+    *,
+    optional_repo: bool = False,
+    report: bool = False,
+    branch: str = GC_BRANCH,
 ) -> None:
     """Run exactly one completion action and keep ordinary command stdout intact."""
-    result = library.defer_finalization(directory) if defer else library.finalize(directory)
+    if defer:
+        result = library.defer_finalization(directory)
+    elif branch == GC_BRANCH:
+        result = library.finalize(directory)
+    else:
+        result = library.finalize(directory, branch)
     if isinstance(result, library.Failure):
         # Help and web also work before initialization, when there is no tip to finalize.
         if (
@@ -193,16 +204,59 @@ def _output(result: library.Result[object]) -> None:
             )
 
 
-consensus_app = typer.Typer(no_args_is_help=True, help="Finalize Git-centric metadata with peers.")
-app.add_typer(consensus_app, name="consensus")
+sync_app = typer.Typer(
+    no_args_is_help=True, help="Synchronize local branches with registered peers."
+)
+app.add_typer(sync_app, name="sync")
 
 
-@consensus_app.command("finalize")
-def consensus_finalize(
-    ctx: typer.Context, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+@sync_app.command("push")
+def sync_push(
+    ctx: typer.Context,
+    branch: Annotated[
+        str | None,
+        typer.Argument(help="Local branch; gc selects metadata. Defaults to the working branch."),
+    ] = None,
+    repo_dir: RepoDir = None,
+    do_not_finalize: Defer = False,
 ) -> None:
-    """Push metadata to registered nodes, reconcile histories and report finality."""
-    _complete(_directory(repo_dir), ctx.obj or do_not_finalize, report=True)
+    """Finalize the selected branch, then metadata, and report the selected outcome."""
+    directory = _directory(repo_dir)
+    defer = ctx.obj or do_not_finalize
+    if branch is None:
+        context = library.get_repository(directory)
+        if isinstance(context, library.Failure):
+            _output(context)
+            return
+        branch = context.value.branch
+        if branch is None or context.value.bare:
+            _output(
+                library.Failure(
+                    library.FailureReason.INVALID_ARGUMENT,
+                    "Specify a local branch when there is no working branch",
+                )
+            )
+            return
+    elif branch == "gc":
+        branch = GC_BRANCH
+    _complete(directory, defer, branch=branch, report=True)
+    if not defer and branch != GC_BRANCH:
+        _complete(directory, False)
+
+
+@pr_app.command("merge")
+def pr_merge(
+    ctx: typer.Context, identifier: str, repo_dir: RepoDir = None, do_not_finalize: Defer = False
+) -> None:
+    """Check permission, merge compare into base locally, then sync compare and metadata."""
+    directory = _directory(repo_dir)
+    result = library.merge_pull_request(identifier, directory)
+    _output(result)
+    if isinstance(result, library.Success):
+        defer = ctx.obj or do_not_finalize
+        if not defer and result.value.compare != GC_BRANCH:
+            _complete(directory, False, branch=result.value.compare)
+        _complete(directory, defer)
 
 
 node_app = typer.Typer(no_args_is_help=True, help="Register and list participating repositories.")

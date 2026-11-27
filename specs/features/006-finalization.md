@@ -3,8 +3,10 @@
 State: verified
 
 Implement the README consensus procedure through a synchronous Python operation
-and `gc consensus finalize [--repo-dir PATH]`. CLI commands also follow the [automatic finalization contract](../changes/2026-11-25-command-finalization.md). PR merging,
-and RPC exposure are outside this command.
+and `gc sync push [BRANCH] [--repo-dir PATH]`. CLI commands also follow the [automatic finalization contract](../changes/2026-11-25-command-finalization.md). The explicit command defaults to the working branch, with `gc` as an explicit
+alias for metadata. Detached HEAD and bare repositories require a branch argument.
+After a successful explicit push, finalize metadata once unless it was the target.
+Deferral skips all peer contact and annotates the local metadata tip.
 
 - FIN-001. Snapshot the sorted registry from metadata once. The Python operation
   accepts a local branch name, defaulting to the metadata branch used by the CLI
