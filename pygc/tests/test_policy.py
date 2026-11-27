@@ -150,7 +150,7 @@ def test_committed_rules(repo):  # noqa: F811
     # against this repository even while the process is in another checkout.
     from git import Repo
 
-    from pygc.library.constants import GC_DIRECTORY, POLICY_DIRECTORY, RULES_DIRECTORY
+    from pygc.library.constants import ACCESS_DIRECTORY, GC_DIRECTORY, RULES_DIRECTORY
     from pygc.library.metadata import (
         _blob,
         _subtree,
@@ -190,12 +190,14 @@ def test_committed_rules(repo):  # noqa: F811
                 for i, expr in enumerate(expressions)
             }
             rules["ignored.py"] = _blob(database, "raise RuntimeError()")
+            access = _subtree(database, gc, ACCESS_DIRECTORY)
+            access[RULES_DIRECTORY] = _write_tree(database, rules)
             commit = prepare_commit(
                 database,
                 root,
                 gc,
-                {RULES_DIRECTORY: _write_tree(database, rules)},
-                POLICY_DIRECTORY,
+                access,
+                ACCESS_DIRECTORY,
                 tip,
                 "replace test rules",
             )

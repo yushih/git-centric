@@ -22,7 +22,6 @@ from .constants import (
     GC_REF,
     GIT_DIRECTORY_MODE,
     OWNER_ROLE,
-    POLICY_DIRECTORY,
     ROLES_DIRECTORY,
     RULE_PATTERN,
     RULES_DIRECTORY,
@@ -181,17 +180,16 @@ def initialize_gc(directory: str | Path = ".") -> Result[str]:
             creator[ROLES_DIRECTORY] = _write_tree(repo, {OWNER_ROLE: empty})
             user = _write_tree(repo, creator)
             users = _write_tree(repo, {author: user})
-            access = _write_tree(repo, {USERS_DIRECTORY: users, ROLES_DIRECTORY: roles})
             # Read the installed sources as bytes so Git stores the original file contents.
             library = Path(__file__).parent
             sources = [library / ACTIONS_FILE, *sorted(library.glob(RULE_PATTERN))]
             rules = _write_tree(
                 repo, {source.name: _blob(repo, source.read_bytes()) for source in sources}
             )
-            policies = _write_tree(repo, {RULES_DIRECTORY: rules})
-            directory_tree = _write_tree(
-                repo, {GC_KEEP_FILE: empty, ACCESS_DIRECTORY: access, POLICY_DIRECTORY: policies}
+            access = _write_tree(
+                repo, {USERS_DIRECTORY: users, ROLES_DIRECTORY: roles, RULES_DIRECTORY: rules}
             )
+            directory_tree = _write_tree(repo, {GC_KEEP_FILE: empty, ACCESS_DIRECTORY: access})
             root_tree = _write_tree(repo, {GC_DIRECTORY: directory_tree})[2]
 
             # Omitting every -p argument is what makes this an orphan commit.
@@ -204,7 +202,7 @@ def initialize_gc(directory: str | Path = ".") -> Result[str]:
                 "-m",
                 f"{GC_INITIAL_COMMIT_MESSAGE}, create roles {', '.join(DEFAULT_ROLES)}, "
                 f"register {author} as {OWNER_ROLE}, and install policy files in "
-                f"{POLICY_DIRECTORY}/{RULES_DIRECTORY}",
+                f"{ACCESS_DIRECTORY}/{RULES_DIRECTORY}",
             )
 
             # 'create' asserts absence inside Git's ref transaction, closing the

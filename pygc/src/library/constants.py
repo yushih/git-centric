@@ -43,7 +43,6 @@ PRIVATE_KEY_FILE = ".__git-centric__sk-Ed25519"
 OWNER_ROLE = "owner"
 DEFAULT_ROLES = (OWNER_ROLE, "admin", "ci", "merger")
 
-POLICY_DIRECTORY = "access"
 RULES_DIRECTORY = "rules"
 RULE_PATTERN = "rule-*.py"
 

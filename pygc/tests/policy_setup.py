@@ -4,7 +4,7 @@ from pathlib import Path
 
 from git import Repo
 
-from pygc.library.constants import GC_DIRECTORY, GC_REF, POLICY_DIRECTORY, RULES_DIRECTORY
+from pygc.library.constants import ACCESS_DIRECTORY, GC_DIRECTORY, GC_REF, RULES_DIRECTORY
 from pygc.library.metadata import (
     _blob,
     _subtree,
@@ -22,9 +22,10 @@ def grant_writes(directory: Path) -> str:
         root = _tree(repo, parent)
         gc = _subtree(repo, root, GC_DIRECTORY)
         rule = _blob(repo, "def eval(action, user, roles):\n    return 'grant'\n")
-        entries = {RULES_DIRECTORY: _write_tree(repo, {"rule-test.py": rule})}
+        entries = _subtree(repo, gc, ACCESS_DIRECTORY)
+        entries[RULES_DIRECTORY] = _write_tree(repo, {"rule-test.py": rule})
         commit = prepare_commit(
-            repo, root, gc, entries, POLICY_DIRECTORY, parent, "install test grant rule"
+            repo, root, gc, entries, ACCESS_DIRECTORY, parent, "install test grant rule"
         )
         publish_commit(repo, commit, parent)
         return commit

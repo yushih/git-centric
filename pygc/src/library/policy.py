@@ -27,7 +27,6 @@ from .constants import (
     GC_REF,
     GIT_EXECUTABLE_FILE_MODE,
     GIT_REGULAR_FILE_MODE,
-    POLICY_DIRECTORY,
     ROLES_DIRECTORY,
     RULE_PATTERN,
     RULES_DIRECTORY,
@@ -83,9 +82,9 @@ def _evaluate(action: Action, repo: Repo, parent: str | None) -> Literal[True] |
 
     oid = parent or _git(repo, "rev-parse", "--verify", GC_REF)
     gc = _subtree(repo, _tree(repo, oid), GC_DIRECTORY)
-    rules = _subtree(repo, _subtree(repo, gc, POLICY_DIRECTORY), RULES_DIRECTORY)
     user = _git(repo, "var", "GIT_AUTHOR_IDENT").rsplit(" <", 1)[0]
     access = _subtree(repo, gc, ACCESS_DIRECTORY)
+    rules = _subtree(repo, access, RULES_DIRECTORY)
     users = _subtree(repo, access, USERS_DIRECTORY)
     memberships = _subtree(repo, _subtree(repo, users, user), ROLES_DIRECTORY)
     registered = _subtree(repo, access, ROLES_DIRECTORY)

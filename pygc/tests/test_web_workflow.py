@@ -296,7 +296,8 @@ def test_rule_script_management(repo, monkeypatch):  # noqa: F811
     listing = rpc("access.rules.list")["result"]
     assert listing["metadata_tip"] == tip
     assert "rule-noop.py" in [rule["name"] for rule in listing["rules"]]
-    helper = git(repo, "rev-parse", f"{tip}:__git-centric__/access/rules/actions.py")
+    rules_path = "__git-centric__/access-control/rules"
+    helper = git(repo, "rev-parse", f"{tip}:{rules_path}/actions.py")
 
     def change(operation, tip, **fields):
         params = {"name": "rule-test.py", "expectedTip": tip, "operation": operation}
@@ -310,12 +311,10 @@ def test_rule_script_management(repo, monkeypatch):  # noqa: F811
     assert change("edit", created, source=source)["result"] == created
     assert change("delete", tip)["error"]["data"]["reason"] == "stale_snapshot"
     edited = change("edit", created, source=source + "# reviewed\n")["result"]
-    assert git(repo, "show", f"{edited}:__git-centric__/access/rules/rule-test.py").endswith(
-        "# reviewed"
-    )
+    assert git(repo, "show", f"{edited}:{rules_path}/rule-test.py").endswith("# reviewed")
     with monkeypatch.context() as patch:
         patch.setenv("GIT_AUTHOR_NAME", "Other")
         assert change("delete", edited)["error"]["data"]["reason"] == "access_denied"
     deleted = change("delete", edited)["result"]
-    assert git(repo, "rev-parse", f"{deleted}:__git-centric__/access/rules/actions.py") == helper
+    assert git(repo, "rev-parse", f"{deleted}:{rules_path}/actions.py") == helper
     assert rpc("access.rules.list")["result"]["rules"] == listing["rules"]

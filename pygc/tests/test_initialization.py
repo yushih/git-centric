@@ -47,16 +47,16 @@ def assert_initial_commit(repo: Path, oid: str) -> None:
     assert git(repo, "ls-tree", "--name-only", GC_REF) == GC_DIRECTORY
     library = Path(initialization.__file__).parent
     sources = [library / "actions.py", *sorted(library.glob("rule-*.py"))]
-    rules_path = f"{GC_DIRECTORY}/access/rules"
+    rules_path = f"{GC_DIRECTORY}/access-control/rules"
     assert git(repo, "ls-tree", "-r", "--name-only", GC_REF) == (
         f"{GC_DIRECTORY}/{GC_KEEP_FILE}\n"
         + "".join(
             f"{GC_DIRECTORY}/access-control/roles/{role}\n"
             for role in ("admin", "ci", "merger", "owner")
         )
+        + "".join(f"{rules_path}/{source.name}\n" for source in sources)
         + f"{GC_DIRECTORY}/access-control/users/GC tests/pk-Ed25519\n"
-        + f"{GC_DIRECTORY}/access-control/users/GC tests/roles/owner\n"
-        + "\n".join(f"{rules_path}/{source.name}" for source in sources)
+        + f"{GC_DIRECTORY}/access-control/users/GC tests/roles/owner"
     )
     for source in sources:
         # Compare raw blob bytes, including source encoding and final newlines.

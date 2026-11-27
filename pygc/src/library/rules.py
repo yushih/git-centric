@@ -12,9 +12,9 @@ from . import policy
 from .access import _Registry, _run
 from .actions import ChangeAccessRuleScripts
 from .constants import (
+    ACCESS_DIRECTORY,
     GIT_EXECUTABLE_FILE_MODE,
     GIT_REGULAR_FILE_MODE,
-    POLICY_DIRECTORY,
     RULE_PATTERN,
     RULES_DIRECTORY,
 )
@@ -37,7 +37,7 @@ class RuleSnapshot:
 
 def list_rules(directory: str | Path = ".") -> Result[RuleSnapshot]:
     def read(store: _Registry) -> RuleSnapshot:
-        access = _subtree(store.repo, store.gc, POLICY_DIRECTORY)
+        access = store.access
         entries = _subtree(store.repo, access, RULES_DIRECTORY)
         scripts = []
         for name, (mode, kind, oid) in sorted(entries.items()):
@@ -73,7 +73,7 @@ def change_rule(
         policy.require(
             ChangeAccessRuleScripts(name="access.rules.change_scripts"), store.repo, store.parent
         )
-        access = _subtree(store.repo, store.gc, POLICY_DIRECTORY)
+        access = store.access
         entries = _subtree(store.repo, access, RULES_DIRECTORY)
         if operation == "create" and name in entries:
             _reject(FailureReason.ID_CONFLICT, f"Rule already exists: {name}")
@@ -105,7 +105,7 @@ def change_rule(
             store.root,
             store.gc,
             access,
-            POLICY_DIRECTORY,
+            ACCESS_DIRECTORY,
             store.parent,
             f"{operation} access rule {name}",
         )

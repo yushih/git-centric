@@ -610,7 +610,7 @@ def test_descriptive_pr_commit_messages(ready: Path) -> None:
 
     assert git(ready, "show", "-s", "--format=%B", GC_REF + "^") == (
         "initialize Git-centric metadata, create roles owner, admin, ci, merger, "
-        "register GC tests as owner, and install policy files in access/rules"
+        "register GC tests as owner, and install policy files in access-control/rules"
     )
     title = 'Title café\n"quoted"'
     item = asyncio.run(create_pull_request("feature/login", "main", title, directory=ready)).value

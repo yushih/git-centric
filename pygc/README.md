@@ -444,7 +444,7 @@ depend on unfinished input report policy denials when submitted and retain draft
 
 The library checks the write actions listed in the root README through `pygc.library.policy.check_action`.
 On the metadata branch, commit trusted Python files under
-`__git-centric__/access/rules/rule-*.py`. Each file defines
+`__git-centric__/access-control/rules/rule-*.py`. Each file defines
 `eval(action, user, roles)`. The action is a typed object with a `name` and
 action-specific fields. The user is the effective Git author name. Roles are
 a sorted tuple of registered memberships, empty for an unknown user.
